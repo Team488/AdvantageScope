@@ -534,6 +534,52 @@ export default class ThreeDimensionRendererImpl implements TabRenderer {
           let gltfScenes = (gltfs as GLTF[]).map((gltf) => gltf.scene);
           if (fieldConfig === undefined) return;
           let loadCount = 0;
+
+          console.log("Starting export");
+          let exporter = new USDZExporter();
+          let allMeshes: THREE.Mesh[] = [];
+          gltfScenes[0].traverse((object) => {
+            let mesh = object as THREE.Mesh;
+            if (mesh.isMesh) {
+              allMeshes.push(mesh);
+            }
+          });
+          allMeshes.forEach((mesh) => {
+            let geometry = mesh.geometry;
+            let vertices: THREE.Vector3[] = [];
+            let center = new THREE.Vector3();
+            for (let i = 0; i < geometry.attributes.position.count; i++) {
+              let vertex = new THREE.Vector3(
+                geometry.attributes.position.getX(i),
+                geometry.attributes.position.getY(i),
+                geometry.attributes.position.getZ(i)
+              );
+              vertices.push(vertex);
+              center.add(vertex);
+            }
+            center.divideScalar(vertices.length);
+            let maxDistance = vertices.reduce((prev, vertex) => {
+              let dist = vertex.distanceTo(center);
+              return dist > prev ? dist : prev;
+            }, 0);
+            if (maxDistance < 0.12) {
+              mesh.removeFromParent();
+            }
+          });
+          exporter
+            .parseAsync(gltfScenes[0])
+            .then((usdz) => {
+              console.log("Finished export");
+              window.sendMainMessage("write-export", {
+                path: "/Users/jonah/Downloads/export.usd",
+                content: usdz
+              });
+            })
+            .catch((error) => {
+              console.log(error);
+            });
+          return;
+
           gltfScenes.forEach(async (scene, index) => {
             // Add to scene
             if (index === 0) {
