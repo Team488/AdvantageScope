@@ -28,7 +28,7 @@ import {
 } from "./Constants";
 
 const USER_ASSETS_README =
-  'This folder contains extra assets for the odometry, 3D field, and joystick views. For more details, see the "Custom Fields/Robots/Joysticks" page in the AdvantageScope documentation (available through the documentation tab in the app or the URL below).\n\nhttps://github.com/Mechanical-Advantage/AdvantageScope/blob/main/docs/CUSTOM-ASSETS.md';
+  'This folder contains extra assets for the odometry, 3D field, and joystick views. For more details, see the "Custom Fields/Robots/Joysticks" page in the AdvantageScope documentation (available through the documentation tab in the app or the URL below).\n\nhttps://docs.advantagescope.org/more-features/custom-assets';
 const CONVERT_LEGACY_ALLOWED_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWxYZabcdefghijklnopqrstuvwxyz0123456789".split("");
 
 /** Returns the path to the user assets folder. */
@@ -342,9 +342,6 @@ export function loadAssets(): AdvantageScopeAssets {
           if ("sourceUrl" in configRaw && typeof configRaw.sourceUrl === "string") {
             config.sourceUrl = configRaw.sourceUrl;
           }
-          if (config.name === "Preseto") {
-            console.log(configRaw);
-          }
           if ("disableSimplification" in configRaw && typeof configRaw.disableSimplification === "boolean") {
             config.disableSimplification = configRaw.disableSimplification;
           }
@@ -645,8 +642,14 @@ export function loadAssets(): AdvantageScopeAssets {
     // Built-in fields added in code to end of list
     assets.field3ds.sort((a, b) => (a.name > b.name ? -1 : b.name > a.name ? 1 : 0));
 
-    // All robots in asset files, no special sorting required
-    assets.robots.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    // All robots in asset files, sort numbers in reverse to put the most recent KitBot at the top
+    assets.robots.sort((a, b) => {
+      if (/^\d/.test(a.name) && /^\d/.test(b.name)) {
+        return -a.name.localeCompare(b.name, undefined, { numeric: true });
+      } else {
+        return a.name.localeCompare(b.name, undefined, { numeric: true });
+      }
+    });
 
     // Built-in joysticks added in code to beginning of list
     assets.joysticks.sort((a, b) => (a.name > b.name ? -1 : b.name > a.name ? 1 : 0));

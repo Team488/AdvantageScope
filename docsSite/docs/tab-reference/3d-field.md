@@ -8,7 +8,7 @@ import PrefsImage from '../img/prefs.png';
 
 # 👀 3D Field
 
-The 3D field shows a 3D visualization of the robot and field. It can be used with regular 2D odometry, but is especially helpful when working with 3D calculations (like localizing with AprilTags). Multiple camera views are available, including field relative, robot relative, and fixed. The timeline shows when the robot is enabled and can be used to navigate through the log data.
+The 3D field shows a 3D visualization of the robot and field. It can be used with regular 2D odometry, but is especially helpful when working with 3D calculations (like localizing with AprilTags). Multiple camera views are available, including field relative, robot relative, and fixed. [AdvantageScope XR](../more-features/advantagescope-xr.md) allows this tab to be visualized using augmented reality. The timeline shows when the robot is enabled and can be used to navigate through the log data.
 
 ![Example of 3D field tab](./img/3d-field-1.png)
 
@@ -24,6 +24,14 @@ To zoom, place the cursor over the timeline and scroll up or down. A range can a
 ![Timeline](./img/timeline.png)
 
 </details>
+
+:::warning
+**Why are there two 2025 field options?**
+
+AdvantageScope includes two 2025 field models: "2025 Field (Welded)" and "2025 Field (AndyMark)". As explained in [Team Update 12](https://firstfrc.blob.core.windows.net/frc2025/Manual/TeamUpdates/TeamUpdate12.pdf), there are two versions of the Reefscape field with different dimensions and processor locations (see the Team Update for details on which field is used at each event). Teams should use the correct AprilTag layout and field dimensions in code and on any vision coprocessors, then **choose the matching field model in AdvantageScope to ensure that the visualization is accurate**. Documentation is available from [WPILib](https://github.wpilib.org/allwpilib/docs/release/java/edu/wpi/first/apriltag/AprilTagFields.html), [Limelight](https://docs.limelightvision.io/docs/docs-limelight/pipeline-apriltag/apriltag-map-specification), and [PhotonVision](https://docs.photonvision.org/en/latest/docs/apriltag-pipelines/multitag.html#updating-the-field-layout) about changing the AprilTag layout.
+
+_The 2025 field model used by AdvantageScope prior to Febuary 2025 is equivalent to the "2025 Field (Welded) option._
+:::
 
 ## Adding Objects
 
@@ -137,7 +145,7 @@ Right-click the rendered field view and click "Set FOV..." to adjust the FOV of 
 This is the default camera mode, where the camera can be freely moved relative to the field. **Left-click + drag** rotates the camera, and **right-click + drag** pans the camera. **Scroll** to zoom in and out.
 
 :::tip
-The camera can also be controlled using the keyboard. The **WASD** keys are used to translate and the **IJKL** keys are used to rotate.
+The camera can also be controlled using the keyboard. The **WASD** keys are used to translate, the **IJKL** keys are used to rotate, and the **E** and **Q** keys are used to translate vertically.
 :::
 
 ### Orbit Robot

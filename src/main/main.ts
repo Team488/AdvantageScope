@@ -1,22 +1,22 @@
 import { hex } from "color-convert";
 import {
+  app,
   BrowserWindow,
   BrowserWindowConstructorOptions,
+  clipboard,
+  dialog,
   FileFilter,
   Menu,
   MenuItem,
   MessageChannelMain,
   MessagePortMain,
-  TitleBarOverlay,
-  TouchBar,
-  TouchBarSlider,
-  app,
-  clipboard,
-  dialog,
   nativeImage,
   nativeTheme,
   powerMonitor,
-  shell
+  shell,
+  TitleBarOverlay,
+  TouchBar,
+  TouchBarSlider
 } from "electron";
 import fs from "fs";
 import jsonfile from "jsonfile";
@@ -35,15 +35,6 @@ import { SourceListConfig, SourceListItemState, SourceListTypeMemory } from "../
 import TabType, { getAllTabTypes, getDefaultTabTitle, getTabAccelerator, getTabIcon } from "../shared/TabType";
 import { BUILD_DATE, COPYRIGHT, DISTRIBUTOR, Distributor } from "../shared/buildConstants";
 import { MAX_RECENT_UNITS, NoopUnitConversion, UnitConversionPreset } from "../shared/units";
-import {
-  delayBetaSurvey,
-  isBeta,
-  isBetaExpired,
-  isBetaWelcomeComplete,
-  openBetaSurvey,
-  saveBetaWelcomeComplete,
-  shouldPromptBetaSurvey
-} from "./BetaConfig";
 import {
   AKIT_PATH_INPUT,
   AKIT_PATH_INPUT_PERIOD,
@@ -78,20 +69,32 @@ import {
 import StateTracker, { ApplicationState, SatelliteWindowState, WindowState } from "./StateTracker";
 import UpdateChecker from "./UpdateChecker";
 import { VideoProcessor } from "./VideoProcessor";
-import { getAssetDownloadStatus, startAssetDownload } from "./assetsDownload";
+import { XRControls } from "./XRControls";
+import { XRServer } from "./XRServer";
+import { getAssetDownloadStatus, startAssetDownloadLoop } from "./assetsDownload";
 import { convertLegacyAssets, createAssetFolders, getUserAssetsPath, loadAssets } from "./assetsUtil";
-import { checkHootIsPro, convertHoot, copyOwlet } from "./hootUtil";
+import {
+  delayBetaSurvey,
+  isBeta,
+  isBetaExpired,
+  isBetaWelcomeComplete,
+  openBetaSurvey,
+  saveBetaWelcomeComplete,
+  shouldPromptBetaSurvey
+} from "./betaUtil";
+import { getOwletDownloadStatus, startOwletDownloadLoop } from "./owletDownloadLoop";
+import { checkHootIsPro, convertHoot, CTRE_LICENSE_URL } from "./owletInterface";
 
 // Global variables
 let hubWindows: BrowserWindow[] = []; // Ordered by last focus time (recent first)
 let downloadWindow: BrowserWindow | null = null;
 let prefsWindow: BrowserWindow | null = null;
 let licensesWindow: BrowserWindow | null = null;
-let xrWindow: BrowserWindow | null = null;
 let satelliteWindows: { [id: string]: BrowserWindow[] } = {};
 let windowPorts: { [id: number]: MessagePortMain } = {};
 let hubTouchBarSliders: { [id: number]: TouchBarSlider } = {};
 let hubExportingIds: Set<number> = new Set();
+let ctreLicensePrompt: Promise<void> | null = null;
 
 let stateTracker = new StateTracker();
 let updateChecker = new UpdateChecker();
@@ -104,6 +107,7 @@ let advantageScopeAssets: AdvantageScopeAssets = {
   joysticks: [],
   loadFailures: []
 };
+XRServer.assetsSupplier = () => advantageScopeAssets;
 
 // Live RLOG variables
 let rlogSockets: { [id: number]: net.Socket } = {};
@@ -189,6 +193,13 @@ function sendActiveSatellites() {
     sendMessage(window, "set-active-satellites", activeSatellites);
   });
 }
+
+// Send XR state to all hub windows
+XRControls.addSourceUUIDCallback((uuid) => {
+  hubWindows.forEach((window) => {
+    sendMessage(window, "set-active-xr-uuid", uuid);
+  });
+});
 
 /**
  * Process a message from a hub window.
@@ -325,24 +336,76 @@ async function handleHubMessage(window: BrowserWindow, message: NamedMessage) {
         } else if (path.endsWith(".hoot")) {
           // Hoot, convert to WPILOG
           targetCount += 1;
-          checkHootIsPro(path)
-            .then((isPro) => {
-              hasHootNonPro = hasHootNonPro || !isPro;
-            })
-            .finally(() => {
-              convertHoot(path)
-                .then((wpilogPath) => {
-                  openPath(wpilogPath, (buffer) => {
-                    results[0] = buffer;
-                    fs.rmSync(wpilogPath);
+
+          // Prompt for CTRE license if not accepted
+          let prefs: Preferences = jsonfile.readFileSync(PREFS_FILENAME);
+          if (!prefs.ctreLicenseAccepted) {
+            if (ctreLicensePrompt === null) {
+              ctreLicensePrompt = new Promise(async (resolve) => {
+                while (true) {
+                  let response = await new Promise<Electron.MessageBoxReturnValue>((resolve) =>
+                    dialog
+                      .showMessageBox(window, {
+                        type: "question",
+                        title: "Alert",
+                        message: "CTRE License Agreement",
+                        detail:
+                          "Hoot log file decoding requires agreement to CTRE's end user license agreement. Please click the button below to view the full license agreement, then check the box if you agree to the terms.",
+                        checkboxLabel: "I Agree",
+                        buttons: ["View License", "OK"],
+                        defaultId: 1,
+                        icon: WINDOW_ICON
+                      })
+                      .then((response) => resolve(response))
+                  );
+                  if (response.response === 1) {
+                    if (response.checkboxChecked) {
+                      prefs.ctreLicenseAccepted = true;
+                      jsonfile.writeFileSync(PREFS_FILENAME, prefs);
+                      sendAllPreferences();
+                    }
+                    resolve();
+                    break;
+                  } else {
+                    shell.openExternal(CTRE_LICENSE_URL);
+                  }
+                }
+              });
+            }
+            await ctreLicensePrompt;
+            ctreLicensePrompt = null;
+          }
+
+          // Check for license and open file
+          prefs = jsonfile.readFileSync(PREFS_FILENAME);
+          if (!prefs.ctreLicenseAccepted) {
+            errorMessage = "Hoot log files cannot be decoded without agreeing to CTRE's end user license agreement.";
+            completedCount++;
+            sendIfReady();
+          } else {
+            checkHootIsPro(path)
+              .then((isPro) => {
+                hasHootNonPro = hasHootNonPro || !isPro;
+              })
+              .finally(() => {
+                convertHoot(path)
+                  .then((wpilogPath) => {
+                    openPath(wpilogPath, (buffer) => {
+                      results[0] = buffer;
+                      fs.rmSync(wpilogPath);
+                    });
+                  })
+                  .catch((reason) => {
+                    if (typeof reason === "string") {
+                      errorMessage = reason;
+                    } else {
+                      errorMessage = reason.message;
+                    }
+                    completedCount++;
+                    sendIfReady();
                   });
-                })
-                .catch((reason) => {
-                  errorMessage = reason;
-                  completedCount++;
-                  sendIfReady();
-                });
-            });
+              });
+          }
         } else {
           // Normal log, open normally
           targetCount += 1;
@@ -1071,7 +1134,61 @@ async function handleHubMessage(window: BrowserWindow, message: NamedMessage) {
       break;
 
     case "open-xr":
-      openXR(window);
+      {
+        let startXR = () => XRControls.open(message.data, window);
+        let prefs: Preferences = jsonfile.readFileSync(PREFS_FILENAME);
+        if (prefs.skipXRExperimentalWarning) {
+          startXR();
+        } else {
+          dialog
+            .showMessageBox(window, {
+              type: "info",
+              title: "Alert",
+              message: "Experimental Feature",
+              detail:
+                "AdvantageScope XR is an experimental feature, and may not function properly on all devices. Please report any problems via the GitHub issues page.",
+              buttons: ["Continue", "Cancel"],
+              defaultId: 0,
+              checkboxLabel: "Don't Show Again",
+              icon: WINDOW_ICON
+            })
+            .then((response) => {
+              if (response.response === 0) {
+                if (response.checkboxChecked) {
+                  prefs.skipXRExperimentalWarning = true;
+                  jsonfile.writeFileSync(PREFS_FILENAME, prefs);
+                  sendAllPreferences();
+                }
+                startXR();
+              }
+            });
+        }
+      }
+      break;
+
+    case "confirm-xr-close":
+      {
+        dialog
+          .showMessageBox(window, {
+            type: "question",
+            title: "Alert",
+            message: "Stop XR Server?",
+            detail: "Closing this tab will stop the XR server and disconnect all devices.",
+            buttons: ["Don't Close", "Close"],
+            defaultId: 1,
+            icon: WINDOW_ICON
+          })
+          .then((response) => {
+            if (response.response === 1) {
+              sendMessage(window, "close-tab", true);
+              XRControls.close();
+            }
+          });
+      }
+      break;
+
+    case "update-xr-command":
+      XRServer.setHubCommand(message.data);
       break;
 
     default:
@@ -1922,7 +2039,7 @@ function setupMenu() {
             const window = baseWindow as BrowserWindow | undefined;
             if (window === undefined) return;
             if (hubWindows.includes(window)) {
-              sendMessage(window, "close-tab");
+              sendMessage(window, "close-tab", false);
             } else {
               window.destroy();
             }
@@ -2004,6 +2121,19 @@ function setupMenu() {
               title: "About",
               message: "Asset Download Status",
               detail: getAssetDownloadStatus(),
+              buttons: ["Close"],
+              icon: WINDOW_ICON
+            });
+          }
+        },
+        {
+          label: "Owlet Download Status...",
+          click() {
+            dialog.showMessageBox({
+              type: "info",
+              title: "About",
+              message: "Owlet Download Status",
+              detail: getOwletDownloadStatus(),
               buttons: ["Close"],
               icon: WINDOW_ICON
             });
@@ -2319,6 +2449,7 @@ function createHubWindow(state?: WindowState) {
     sendMessage(window, "set-version", {
       platform: process.platform,
       platformRelease: os.release(),
+      platformArch: app.runningUnderARM64Translation ? "arm64" : process.arch, // Arch of OS, not this binary
       appVersion: APP_VERSION
     });
     sendMessage(window, "show-update-button", updateChecker.getShouldPrompt());
@@ -2608,6 +2739,7 @@ function createExportWindow(
   // Finish setup
   exportWindow.setMenu(null);
   exportWindow.once("ready-to-show", parentWindow.show);
+  let isPreparingExport = false;
   exportWindow.webContents.on("dom-ready", () => {
     // Create ports on reload
     const { port1, port2 } = new MessageChannelMain();
@@ -2651,10 +2783,16 @@ function createExportWindow(
           })
           .then((response) => {
             if (!response.canceled) {
+              isPreparingExport = true;
               exportWindow.destroy();
               sendMessage(parentWindow, "prepare-export", { path: response.filePath, options: exportOptions });
             }
           });
+      }
+    });
+    exportWindow.on("closed", () => {
+      if (!isPreparingExport) {
+        sendMessage(parentWindow, "cancel-export");
       }
     });
     exportWindow.on("blur", () => port2.postMessage({ isFocused: false }));
@@ -2846,7 +2984,6 @@ function openPreferences(parentWindow: Electron.BrowserWindow) {
 
   // Finish setup
   prefsWindow.setMenu(null);
-  prefsWindow.setFullScreenable(false); // Call separately b/c the normal behavior is broken: https://github.com/electron/electron/pull/39086
   prefsWindow.once("ready-to-show", prefsWindow.show);
   prefsWindow.webContents.on("dom-ready", () => {
     // Create ports on reload
@@ -2896,7 +3033,6 @@ function openDownload(parentWindow: Electron.BrowserWindow) {
 
   // Finish setup
   downloadWindow.setMenu(null);
-  downloadWindow.setFullScreenable(false); // Call separately b/c the normal behavior is broken: https://github.com/electron/electron/pull/39086
   downloadWindow.once("ready-to-show", downloadWindow.show);
   downloadWindow.once("close", downloadStop);
   downloadWindow.webContents.on("dom-ready", () => {
@@ -2949,44 +3085,9 @@ function openLicenses(parentWindow: Electron.BrowserWindow) {
 
   // Finish setup
   licensesWindow.setMenu(null);
-  licensesWindow.setFullScreenable(false); // Call separately b/c the normal behavior is broken: https://github.com/electron/electron/pull/39086
   licensesWindow.once("ready-to-show", licensesWindow.show);
   licensesWindow.once("close", downloadStop);
   licensesWindow.loadFile(path.join(__dirname, "../www/licenses.html"));
-}
-
-/**
- * Creates a new XR window if it doesn't already exist.
- * @param parentWindow The parent window to use for alignment
- */
-function openXR(parentWindow: Electron.BrowserWindow) {
-  if (xrWindow !== null && !xrWindow.isDestroyed()) {
-    xrWindow.focus();
-    return;
-  }
-
-  const width = 400;
-  const height = 400;
-  xrWindow = new BrowserWindow({
-    width: width,
-    height: height,
-    x: Math.floor(parentWindow.getBounds().x + parentWindow.getBounds().width / 2 - width / 2),
-    y: Math.floor(parentWindow.getBounds().y + parentWindow.getBounds().height / 2 - height / 2),
-    resizable: false,
-    icon: WINDOW_ICON,
-    show: false,
-    fullscreenable: false,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js")
-    }
-  });
-
-  // Finish setup
-  xrWindow.setMenu(null);
-  xrWindow.setFullScreenable(false); // Call separately b/c the normal behavior is broken: https://github.com/electron/electron/pull/39086
-  xrWindow.once("ready-to-show", xrWindow.show);
-  xrWindow.once("close", downloadStop);
-  xrWindow.loadFile(path.join(__dirname, "../www/xr.html"));
 }
 
 /**
@@ -3016,7 +3117,6 @@ function openSourceListHelp(parentWindow: Electron.BrowserWindow, config: Source
 
   // Finish setup
   helpWindow.setMenu(null);
-  helpWindow.setFullScreenable(false); // Call separately b/c the normal behavior is broken: https://github.com/electron/electron/pull/39086
   helpWindow.once("ready-to-show", helpWindow.show);
   helpWindow.once("close", downloadStop);
   helpWindow.webContents.on("dom-ready", () => {
@@ -3056,7 +3156,6 @@ function openBetaWelcome(parentWindow: Electron.BrowserWindow) {
   });
   // Finish setup
   betaWelcome.setMenu(null);
-  betaWelcome.setFullScreenable(false); // Call separately b/c the normal behavior is broken: https://github.com/electron/electron/pull/39086
   betaWelcome.once("ready-to-show", betaWelcome.show);
   betaWelcome.on("close", () => {
     app.quit();
@@ -3105,6 +3204,15 @@ process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 
 // Silence unhandled promise rejections
 process.on("unhandledRejection", () => {});
+
+// Set WM_CLASS for Linux
+if (process.platform === "linux") {
+  if (DISTRIBUTOR === Distributor.WPILib) {
+    app.setName("AdvantageScope (WPILib)");
+  } else {
+    app.setName("AdvantageScope");
+  }
+}
 
 app.whenReady().then(() => {
   // Check preferences and set theme
@@ -3213,6 +3321,12 @@ app.whenReady().then(() => {
     if ("skipFrcLogFolderDefault" in oldPrefs && typeof oldPrefs.skipFrcLogFolderDefault === "boolean") {
       prefs.skipFrcLogFolderDefault = oldPrefs.skipFrcLogFolderDefault;
     }
+    if ("skipXRExperimentalWarning" in oldPrefs && typeof oldPrefs.skipXRExperimentalWarning === "boolean") {
+      prefs.skipXRExperimentalWarning = oldPrefs.skipXRExperimentalWarning;
+    }
+    if ("ctreLicenseAccepted" in oldPrefs && typeof oldPrefs.ctreLicenseAccepted === "boolean") {
+      prefs.ctreLicenseAccepted = oldPrefs.ctreLicenseAccepted;
+    }
     jsonfile.writeFileSync(PREFS_FILENAME, prefs);
     nativeTheme.themeSource = prefs.theme;
   }
@@ -3220,7 +3334,7 @@ app.whenReady().then(() => {
   // Load assets
   createAssetFolders();
   convertLegacyAssets();
-  startAssetDownload(() => {
+  startAssetDownloadLoop(() => {
     advantageScopeAssets = loadAssets();
     sendAssets();
   });
@@ -3230,6 +3344,9 @@ app.whenReady().then(() => {
     sendAssets();
   }, 5000);
   advantageScopeAssets = loadAssets();
+
+  // Start owlet download
+  startOwletDownloadLoop();
 
   // Create menu and windows
   setupMenu();
@@ -3276,9 +3393,6 @@ app.whenReady().then(() => {
   if (DISTRIBUTOR === Distributor.FRC6328) {
     checkForUpdate(false);
   }
-
-  // Copy current owlet version to cache
-  copyOwlet();
 });
 
 app.on("window-all-closed", () => {

@@ -446,6 +446,8 @@ const ThreeDimensionController_Config: SourceListConfig = {
         "Transform3d[]",
         "Translation2d[]",
         "Translation3d[]",
+        "SwerveSample[]",
+        "DifferentialSample[]",
         "Trajectory"
       ],
       showDocs: true,
@@ -539,7 +541,8 @@ const ThreeDimensionController_Config: SourceListConfig = {
             { key: "auto", display: "Auto" },
             { key: "teleop", display: "Teleop" },
             { key: "teleop-no-endgame", display: "Teleop (No Endgame)" },
-            { key: "full", display: "No Filter" }
+            { key: "full", display: "Full Log" },
+            { key: "visible", display: "Visible Range" }
           ]
         }
       ],
@@ -564,7 +567,8 @@ const ThreeDimensionController_Config: SourceListConfig = {
             { key: "auto", display: "Auto" },
             { key: "teleop", display: "Teleop" },
             { key: "teleop-no-endgame", display: "Teleop (No Endgame)" },
-            { key: "full", display: "Full Log" }
+            { key: "full", display: "Full Log" },
+            { key: "visible", display: "Visible Range" }
           ]
         },
         {

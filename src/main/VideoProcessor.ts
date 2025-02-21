@@ -11,6 +11,7 @@ import { getTBAMatchInfo, getTBAMatchKey } from "../shared/TBAUtil";
 import VideoSource from "../shared/VideoSource";
 import { createUUID, zfill } from "../shared/util";
 import { PREFS_FILENAME, VIDEO_CACHE, VIDEO_CACHE_FALLBACK, WINDOW_ICON } from "./Constants";
+import getElectronPlatform from "./getElectronPlatform";
 
 export class VideoProcessor {
   private static NUM_TESSERACT_WORKERS = 8;
@@ -47,7 +48,7 @@ export class VideoProcessor {
       height: 30 / 1080
     },
 
-    // Large banner format (lower) - 2024
+    // Large banner format (lower) - 2024/2025
     {
       left: 865 / 1920,
       top: 980 / 1080,
@@ -55,12 +56,28 @@ export class VideoProcessor {
       height: 90 / 1080
     },
 
-    // Large banner format (upper) - 2024
+    // Large banner format (upper) - 2024/2025
     {
       left: 865 / 1920,
       top: 160 / 1080,
       width: 200 / 1920,
       height: 90 / 1080
+    },
+
+    // Web stream format (lower) - 2025
+    {
+      left: 900 / 1920,
+      top: 960 / 1080,
+      width: 120 / 1920,
+      height: 68 / 1080
+    },
+
+    // Web stream format (upper) - 2025
+    {
+      left: 600 / 1920,
+      top: 40 / 1080,
+      width: 80 / 1920,
+      height: 45 / 1080
     }
   ];
 
@@ -106,29 +123,24 @@ export class VideoProcessor {
       fs.mkdirSync(cachePath, { recursive: true });
 
       // Find ffmpeg path
-      let platformString = "";
-      switch (process.platform) {
-        case "darwin":
-          platformString = "mac";
-          break;
-        case "linux":
-          platformString = "linux";
-          break;
-        case "win32":
-          platformString = "win";
-          break;
-      }
       let ffmpegPath: string;
-      let arch = process.arch === "arm" ? "armv7l" : process.arch;
       if (app.isPackaged) {
-        ffmpegPath = path.join(__dirname, "..", "..", "ffmpeg-" + platformString + "-" + arch);
+        ffmpegPath = path.join(__dirname, "..", "..", "ffmpeg-" + getElectronPlatform());
       } else {
-        ffmpegPath = path.join(__dirname, "..", "ffmpeg", "ffmpeg-" + platformString + "-" + arch);
+        ffmpegPath = path.join(__dirname, "..", "ffmpeg", "ffmpeg-" + getElectronPlatform());
       }
 
       // Start ffmpeg
       if (uuid in VideoProcessor.processes) VideoProcessor.processes[uuid].kill();
-      let ffmpeg = spawn(ffmpegPath, ["-i", videoPath, "-q:v", "2", path.join(cachePath, "%08d.jpg")]);
+      let ffmpeg = spawn(ffmpegPath, [
+        "-i",
+        videoPath,
+        "-vf",
+        "scale=1920:-2,setsar=1:1", // Limit to 1920px width
+        "-q:v",
+        "2",
+        path.join(cachePath, "%08d.jpg")
+      ]);
       VideoProcessor.processes[uuid] = ffmpeg;
       let running = true;
       let fullOutput = "";

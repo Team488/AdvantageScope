@@ -348,7 +348,9 @@ const OdometryController_Config: SourceListConfig = {
         "Transform3d[]",
         "Translation2d[]",
         "Translation3d[]",
-        "Trajectory"
+        "Trajectory",
+        "DifferentialSample[]",
+        "SwerveSample[]"
       ],
       showDocs: true,
       options: [
@@ -441,7 +443,8 @@ const OdometryController_Config: SourceListConfig = {
             { key: "auto", display: "Auto" },
             { key: "teleop", display: "Teleop" },
             { key: "teleop-no-endgame", display: "Teleop (No Endgame)" },
-            { key: "full", display: "Full Log" }
+            { key: "full", display: "Full Log" },
+            { key: "visible", display: "Visible Range" }
           ]
         }
       ],
@@ -466,7 +469,8 @@ const OdometryController_Config: SourceListConfig = {
             { key: "auto", display: "Auto" },
             { key: "teleop", display: "Teleop" },
             { key: "teleop-no-endgame", display: "Teleop (No Endgame)" },
-            { key: "full", display: "Full Log" }
+            { key: "full", display: "Full Log" },
+            { key: "visible", display: "Visible Range" }
           ]
         },
         {
@@ -501,6 +505,8 @@ const OdometryController_Config: SourceListConfig = {
         "Transform3d",
         "Transform2d[]",
         "Transform3d[]",
+        "DifferentialSample[]",
+        "SwerveSample[]",
         "Trajectory"
       ],
       showDocs: true,

@@ -3,6 +3,11 @@ import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUti
 import { getSpiralIndex } from "../../util";
 import { disposeObject } from "../ThreeDimensionRendererImpl";
 
+export const XR_MAX_RADIUS = 0.08;
+export const LOW_POWER_MAX_RADIUS = 0.08;
+export const STANDARD_MAX_RADIUS = 0.04;
+export const CINEMATIC_MAX_RADIUS = 0.02;
+
 export default async function optimizeGeometries(
   object: THREE.Object3D,
   mode: "low-power" | "standard" | "cinematic",
@@ -118,6 +123,19 @@ function getGeometries(
       mesh.updateWorldMatrix(true, false);
       geometry.applyMatrix4(mesh.matrixWorld);
 
+      // Remove unused attributes (interferes with merge)
+      let attributeNames = Object.keys(geometry.attributes);
+      if (!attributeNames.includes("normal") || !attributeNames.includes("position")) {
+        // Doesn't include required attributes, remove
+        return;
+      }
+      attributeNames.forEach((name) => {
+        if (name !== "normal" && name !== "position") {
+          geometry.deleteAttribute(name);
+        }
+      });
+
+      // Apply color from material as attribute
       let isTransparent = false;
       if (!Array.isArray(mesh.material)) {
         isTransparent = mesh.material.transparent && mesh.material.opacity < 0.75;
@@ -138,6 +156,7 @@ function getGeometries(
         }
       }
 
+      // Apply simplification
       let include = true;
       let vertices: THREE.Vector3[] = [];
       let center = new THREE.Vector3();
@@ -158,17 +177,18 @@ function getGeometries(
       if (enableSimplification && !mesh.name.includes("NOSIMPLIFY")) {
         switch (mode) {
           case "low-power":
-            if (maxRadius < 0.08) include = false;
+            if (maxRadius < LOW_POWER_MAX_RADIUS) include = false;
             break;
           case "standard":
-            if (maxRadius < 0.04) include = false;
+            if (maxRadius < STANDARD_MAX_RADIUS) include = false;
             break;
           case "cinematic":
-            if (maxRadius < 0.02) include = false;
+            if (maxRadius < CINEMATIC_MAX_RADIUS) include = false;
             break;
         }
       }
 
+      // Save final geometry
       if (include) {
         let outputIndex = 0;
         if (slicingSize !== undefined && maxRadius * 2 < slicingSize) {

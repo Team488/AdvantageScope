@@ -24,13 +24,9 @@ The following sources of live data are supported by AdvantageScope:
 
 - **NetworkTables 4:** This is WPILib's primary networking protocol. See the [WPILib documentation](https://docs.wpilib.org/en/stable/docs/software/networktables/index.html) for more details.
 - **NetworkTables 4 (AdvantageKit):** This mode is designed for use with robot code running AdvantageKit, which publishes to the `AdvantageKit` table in NetworkTables.
-- **Phoenix Diagnostics:** This mode uses HTTP to connect to a Phoenix [diagnostic server](https://pro.docs.ctr-electronics.com/en/latest/docs/installation/running-diagnostics.html), which allows for data streaming from CTRE CAN devices with [Phoenix 6](https://pro.docs.ctr-electronics.com/en/latest/). This is similar to the [plotting feature](https://pro.docs.ctr-electronics.com/en/latest/docs/tuner/plotting.html) in Phoenix Tuner.
+- **Phoenix Diagnostics:** This mode uses HTTP to connect to a Phoenix [diagnostic server](https://pro.docs.ctr-electronics.com/en/latest/docs/troubleshooting/running-diagnostics.html), which allows for data streaming from CTRE CAN devices with [Phoenix 6](https://pro.docs.ctr-electronics.com/en/latest/). This is similar to the [plotting feature](https://pro.docs.ctr-electronics.com/en/latest/docs/tuner/plotting.html) in Phoenix Tuner. See [this page](/more-features/phoenix-diagnostics) for more information.
 - **PathPlanner 2023:** Legacy, this mode connects using the `PathPlannerServer` protocol used for telemetry by PathPlanner 2023. The connection is always initiated on port 5811. Note that PathPlanner 2024 and later publish telemetry data using NetworkTables, so the **NetworkTables 4** mode should be used.
 - **RLOG Server:** This protocol is supported by AdvantageKit as an alternative to NetworkTables. The connection is initiated on port 5800 by default.
-
-:::warning
-The Phoenix Diagnostics live mode may experience issues as a result of Phoenix updates. If this mode does not function properly, update to the latest version of AdvantageScope. If the issue persists, please [open an issue](https://github.com/Mechanical-Advantage/AdvantageScope/issues) to let us know.
-:::
 
 ### Live Mode
 
@@ -77,12 +73,12 @@ This feature is not intended for controlling the robot on the field. Dashboard-s
 
 ### Tuning With AdvantageKit
 
-Fields published by AdvantageKit to the `AdvantageKit` subtable are output-only and cannot be edited. However, users can publish fields from user code that are tunable from AdvantageScope. **Any fields published to the "/Tuning" table on NetworkTables will appear under the "Tuning" table when when using the "NetworkTables 4 (AdvantageKit)" live source.**
+Fields published by AdvantageKit to the `AdvantageKit` subtable are output-only and cannot be edited. However, users can publish fields from user code that are tunable from AdvantageScope. **Any fields published to the "/Tuning" table on NetworkTables will appear under the "Tuning" table when using the "NetworkTables 4 (AdvantageKit)" live source.**
 
-For example, a tunable number can be published using the [`LoggedNetworkNumber`](https://docs.advantagekit.org/recording-inputs/dashboard-inputs) class:
+For example, a tunable number can be published using the [`LoggedNetworkNumber`](https://docs.advantagekit.org/data-flow/recording-inputs/dashboard-inputs) class:
 
 ```java
-LoggedNetworkNumber tunableNumber = new LoggedNetworkNumber("/Tuning/MyTunableNumber");
+LoggedNetworkNumber tunableNumber = new LoggedNetworkNumber("/Tuning/MyTunableNumber", 0.0);
 ```
 
 :::warning

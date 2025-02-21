@@ -1,5 +1,5 @@
 import Log from "../../../shared/log/Log";
-import { PROTO_PREFIX, STRUCT_PREFIX } from "../../../shared/log/LogUtil";
+import { getEnabledKey, PROTO_PREFIX, STRUCT_PREFIX } from "../../../shared/log/LogUtil";
 import LoggableType from "../../../shared/log/LoggableType";
 import {
   HistoricalDataSource_WorkerFieldResponse,
@@ -126,6 +126,13 @@ async function start(data: Uint8Array) {
     return;
   }
 
+  // Load enabled field (required for merging)
+  let enabledKey = getEnabledKey(log);
+  if (enabledKey !== undefined) {
+    parseField(enabledKey, true);
+  }
+
+  // Send message
   log.getChangedFields(); // Reset changed fields
   sendResponse({
     type: "initial",
@@ -134,82 +141,95 @@ async function start(data: Uint8Array) {
   });
 }
 
-function parseField(key: string) {
+function parseField(key: string, skipMessage = false) {
   // Parse records
-  const type = entryTypes[key];
-  dataRecordPositions[key].forEach((position) => {
-    const [record, _] = decoder!.getRecordAtPosition(position);
-    if (record === null) return;
-    let timestamp = Math.max(0, record.getTimestamp() / 1000000.0);
-    try {
-      switch (type) {
-        case "boolean":
-          log.putBoolean(key, timestamp, record.getBoolean());
-          break;
-        case "int":
-        case "int64":
-          log.putNumber(key, timestamp, record.getInteger());
-          break;
-        case "float":
-          log.putNumber(key, timestamp, record.getFloat());
-          break;
-        case "double":
-          log.putNumber(key, timestamp, record.getDouble());
-          break;
-        case "string":
-          log.putString(key, timestamp, record.getString());
-          break;
-        case "boolean[]":
-          log.putBooleanArray(key, timestamp, record.getBooleanArray());
-          break;
-        case "int[]":
-        case "int64[]":
-          log.putNumberArray(key, timestamp, record.getIntegerArray());
-          break;
-        case "float[]":
-          log.putNumberArray(key, timestamp, record.getFloatArray());
-          break;
-        case "double[]":
-          log.putNumberArray(key, timestamp, record.getDoubleArray());
-          break;
-        case "string[]":
-          log.putStringArray(key, timestamp, record.getStringArray());
-          break;
-        case "json":
-          log.putJSON(key, timestamp, record.getString());
-          break;
-        case "msgpack":
-          log.putMsgpack(key, timestamp, record.getRaw());
-          break;
-        default: // Default to raw
-          if (type.startsWith(STRUCT_PREFIX)) {
-            let schemaType = type.split(STRUCT_PREFIX)[1];
-            if (schemaType.endsWith("[]")) {
-              log.putStruct(key, timestamp, record.getRaw(), schemaType.slice(0, -2), true);
-            } else {
-              log.putStruct(key, timestamp, record.getRaw(), schemaType, false);
-            }
-          } else if (type.startsWith(PROTO_PREFIX)) {
-            let schemaType = type.split(PROTO_PREFIX)[1];
-            log.putProto(key, timestamp, record.getRaw(), schemaType);
-          } else {
-            log.putRaw(key, timestamp, record.getRaw());
-            if (CustomSchemas.has(type)) {
-              try {
-                CustomSchemas.get(type)!(log, key, timestamp, record.getRaw());
-              } catch {
-                console.error('Failed to decode custom schema "' + type + '"');
-              }
-              log.setGeneratedParent(key);
-            }
-          }
-          break;
-      }
-    } catch (error) {
-      console.error("Failed to decode WPILOG record:", error);
+  if (!(key in entryTypes)) {
+    // Try removing leading slash, sometimes inserted
+    // when a key prefix is used in the main renderer
+    if (key.startsWith("/")) {
+      key = key.slice(1);
     }
-  });
-  delete dataRecordPositions[key]; // Clear memory
+    if (!(key in entryTypes)) {
+      console.warn("Unavailable key requested for parsing:", key);
+      return;
+    }
+  }
+  if (key in dataRecordPositions) {
+    const type = entryTypes[key];
+    dataRecordPositions[key].forEach((position) => {
+      const [record, _] = decoder!.getRecordAtPosition(position);
+      if (record === null) return;
+      let timestamp = Math.max(0, record.getTimestamp() / 1000000.0);
+      try {
+        switch (type) {
+          case "boolean":
+            log.putBoolean(key, timestamp, record.getBoolean());
+            break;
+          case "int":
+          case "int64":
+            log.putNumber(key, timestamp, record.getInteger());
+            break;
+          case "float":
+            log.putNumber(key, timestamp, record.getFloat());
+            break;
+          case "double":
+            log.putNumber(key, timestamp, record.getDouble());
+            break;
+          case "string":
+            log.putString(key, timestamp, record.getString());
+            break;
+          case "boolean[]":
+            log.putBooleanArray(key, timestamp, record.getBooleanArray());
+            break;
+          case "int[]":
+          case "int64[]":
+            log.putNumberArray(key, timestamp, record.getIntegerArray());
+            break;
+          case "float[]":
+            log.putNumberArray(key, timestamp, record.getFloatArray());
+            break;
+          case "double[]":
+            log.putNumberArray(key, timestamp, record.getDoubleArray());
+            break;
+          case "string[]":
+            log.putStringArray(key, timestamp, record.getStringArray());
+            break;
+          case "json":
+            log.putJSON(key, timestamp, record.getString());
+            break;
+          case "msgpack":
+            log.putMsgpack(key, timestamp, record.getRaw());
+            break;
+          default: // Default to raw
+            if (type.startsWith(STRUCT_PREFIX)) {
+              let schemaType = type.split(STRUCT_PREFIX)[1];
+              if (schemaType.endsWith("[]")) {
+                log.putStruct(key, timestamp, record.getRaw(), schemaType.slice(0, -2), true);
+              } else {
+                log.putStruct(key, timestamp, record.getRaw(), schemaType, false);
+              }
+            } else if (type.startsWith(PROTO_PREFIX)) {
+              let schemaType = type.split(PROTO_PREFIX)[1];
+              log.putProto(key, timestamp, record.getRaw(), schemaType);
+            } else {
+              log.putRaw(key, timestamp, record.getRaw());
+              if (CustomSchemas.has(type)) {
+                try {
+                  CustomSchemas.get(type)!(log, key, timestamp, record.getRaw());
+                } catch {
+                  console.error('Failed to decode custom schema "' + type + '"');
+                }
+                log.setGeneratedParent(key);
+              }
+            }
+            break;
+        }
+      } catch (error) {
+        console.error("Failed to decode WPILOG record:", error);
+      }
+    });
+    delete dataRecordPositions[key]; // Clear memory
+  }
 
   // Get set of changed fields
   let fieldData: HistoricalDataSource_WorkerFieldResponse[] = [];
@@ -235,8 +255,10 @@ function parseField(key: string) {
   }
 
   // Send result
-  sendResponse({
-    type: "fields",
-    fields: fieldData
-  });
+  if (!skipMessage) {
+    sendResponse({
+      type: "fields",
+      fields: fieldData
+    });
+  }
 }

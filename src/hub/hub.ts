@@ -39,6 +39,7 @@ declare global {
     typeMemory: SourceListTypeMemory;
     platform: string;
     platformRelease: string;
+    platformArch: string;
     appVersion: string;
     isFullscreen: boolean;
     isFocused: boolean;
@@ -565,6 +566,7 @@ async function handleMainMessage(message: NamedMessage) {
     case "set-version":
       window.platform = message.data.platform;
       window.platformRelease = message.data.platformRelease;
+      window.platformArch = message.data.platformArch;
       window.appVersion = message.data.appVersion;
       updateFancyWindow();
       break;
@@ -602,6 +604,10 @@ async function handleMainMessage(message: NamedMessage) {
 
     case "set-active-satellites":
       window.tabs.setActiveSatellites(message.data);
+      break;
+
+    case "set-active-xr-uuid":
+      window.tabs.setActiveXRUUID(message.data);
       break;
 
     case "call-selection-setter":
@@ -824,7 +830,7 @@ async function handleMainMessage(message: NamedMessage) {
       break;
 
     case "close-tab":
-      window.tabs.close(window.tabs.getSelectedTab());
+      window.tabs.close(window.tabs.getSelectedTab(), message.data);
       break;
 
     case "rename-tab":

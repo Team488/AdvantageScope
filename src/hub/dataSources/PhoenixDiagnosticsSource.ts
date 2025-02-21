@@ -42,7 +42,7 @@ export default class PhoenixDiagnosticsSource extends LiveDataSource {
           this.setStatus(LiveDataSourceStatus.Active);
           devices.forEach((device) => {
             // Phoenix 6 devices use a "pro" application regardless of
-            // license state. Phoenix 5 devices evices use a different
+            // license state. Phoenix 5 devices devices use a different
             // protocol that does not advertise a list of signals, so
             // don't include them in the list
             if (!device.IsPROApplication) return;
@@ -195,12 +195,19 @@ export default class PhoenixDiagnosticsSource extends LiveDataSource {
   /** Converts a device object to its simple name. */
   private getDeviceName(device: Response_Device): string {
     let name = device.Model.replaceAll(" ", "");
-    if (name.startsWith("CANCoder")) {
+    let nameLower = name.toLowerCase();
+    if (nameLower.startsWith("cancoder")) {
       name = "CANcoder";
-    } else if (name.startsWith("TalonFX")) {
+    } else if (nameLower.startsWith("talonfxs")) {
+      name = "TalonFXS";
+    } else if (nameLower.startsWith("talonfx")) {
       name = "TalonFX";
-    } else if (name.startsWith("Pigeon2")) {
+    } else if (nameLower.startsWith("pigeon2")) {
       name = "Pigeon2";
+    } else if (nameLower.startsWith("canrage")) {
+      name = "CANrange";
+    } else if (nameLower.startsWith("candi")) {
+      name = "CANdi";
     }
     name = name + "-" + (device.Name.startsWith(device.Model) ? device.ID.toString() : device.Name);
     if (device.CANivoreDevName.length > 0) {
@@ -315,7 +322,7 @@ interface Response_Point {
   Signals: { [key: string]: number };
 }
 
-// Valid as of Phoenix 25.0.0-beta-1
+// Valid as of Phoenix 25.2.0
 const PhoenixEnums: { [key: string]: { [key: number]: string } } = {
   AppliedRotorPolarity: {
     0: "PositiveIsCounterClockwise",
@@ -330,7 +337,21 @@ const PhoenixEnums: { [key: string]: { [key: number]: string } } = {
     9: "BridgeReq_FOCEasy",
     12: "BridgeReq_FaultBrake",
     13: "BridgeReq_FaultCoast",
-    14: "BridgeReq_ActiveBrake"
+    14: "BridgeReq_ActiveBrake",
+    15: "BridgeReq_VariableBrake"
+  },
+  ConnectedMotor: {
+    0: "Unknown",
+    1: "Falcon500_Integrated",
+    2: "KrakenX60_Integrated",
+    3: "KrakenX44_Integrated",
+    4: "Minion_JST",
+    5: "Brushed_AB",
+    6: "Brushed_AC",
+    7: "Brushed_BC",
+    8: "NEO_JST",
+    9: "NEO550_JST",
+    10: "VORTEX_JST"
   },
   ControlMode: {
     0: "DisabledOutput",
@@ -404,6 +425,14 @@ const PhoenixEnums: { [key: string]: { [key: number]: string } } = {
     24: "Reserved",
     25: "CoastOut"
   },
+  ExternalMotorTempStatus: {
+    0: "Collecting",
+    1: "Disconnected",
+    2: "TooHot",
+    3: "Normal",
+    4: "NotUsed",
+    5: "WrongMotorOrShorted"
+  },
   ForwardLimit: {
     0: "ClosedToGround",
     1: "Open"
@@ -417,6 +446,11 @@ const PhoenixEnums: { [key: string]: { [key: number]: string } } = {
     2: "Magnet_Orange",
     3: "Magnet_Green",
     0: "Magnet_Invalid"
+  },
+  MeasurementHealth: {
+    0: "Good",
+    1: "Limited",
+    2: "Bad"
   },
   MotionMagicIsRunning: {
     1: "Enabled",

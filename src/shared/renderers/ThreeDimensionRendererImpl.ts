@@ -254,6 +254,7 @@ export default class ThreeDimensionRendererImpl implements TabRenderer {
 
     // Create key bindings
     window.addEventListener("keydown", (event) => {
+      if (window.platform === "darwin" ? event.metaKey : event.ctrlKey) return;
       if (event.target !== document.body) return;
       if (canvasContainer.clientHeight === 0) return;
       this.keysPressed.add(event.code);
@@ -420,6 +421,7 @@ export default class ThreeDimensionRendererImpl implements TabRenderer {
       this.MATERIAL_SPECULAR,
       this.MATERIAL_SHININESS,
       this.mode,
+      false,
       () => (this.shouldRender = true)
     ] as const;
     let manager: ObjectManager<ThreeDimensionRendererCommand_AnyObj>;
@@ -487,6 +489,16 @@ export default class ThreeDimensionRendererImpl implements TabRenderer {
     }
     if (this.keysPressed.has("KeyD")) {
       this.controls.truck(5 * delta, 0, false);
+      this.controls.update(0);
+      controlsUpdated = true;
+    }
+    if (this.keysPressed.has("KeyQ")) {
+      this.controls.elevate(-5 * delta, false);
+      this.controls.update(0);
+      controlsUpdated = true;
+    }
+    if (this.keysPressed.has("KeyE")) {
+      this.controls.elevate(5 * delta, false);
       this.controls.update(0);
       controlsUpdated = true;
     }

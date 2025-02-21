@@ -67,11 +67,6 @@ export class HistoricalDataSource {
     this.refreshCallback = refreshCallback;
 
     // Post message to start reading
-    if (window.platform !== "win32" && path.endsWith(".hoot")) {
-      this.customError = "Hoot log files cannot be decoded on macOS or Linux.";
-      this.setStatus(HistoricalDataSourceStatus.Error);
-      return;
-    }
     if (this.path.endsWith(".dsevents")) {
       this.path = this.path.slice(0, -8) + "dslog";
     }
@@ -146,6 +141,7 @@ export class HistoricalDataSource {
     );
 
     // Process response
+    let offset = 0;
     this.worker.onmessage = (event) => {
       let message = event.data as HistoricalDataSource_WorkerResponse;
       switch (message.type) {
@@ -157,7 +153,9 @@ export class HistoricalDataSource {
           return; // Exit immediately
 
         case "initial":
-          this.log?.mergeWith(Log.fromSerialized(message.log), this.keyPrefix);
+          if (this.log !== null) {
+            offset = this.log.mergeWith(Log.fromSerialized(message.log), this.keyPrefix);
+          }
           this.logIsPartial = message.isPartial;
           break;
 
@@ -169,6 +167,7 @@ export class HistoricalDataSource {
           if (this.logIsPartial) {
             message.fields.forEach((field) => {
               let key = applyKeyPrefix(this.keyPrefix, field.key);
+              field.data.timestamps = (field.data.timestamps as number[]).map((timestamp) => timestamp + offset);
               this.log?.setField(key, LogField.fromSerialized(field.data));
               if (field.generatedParent) this.log?.setGeneratedParent(key);
               this.requestedFields.delete(key);

@@ -23,7 +23,7 @@ As this library is not an official REV tool, support queries should be directed 
 
 ## Setup
 
-Install the URCL vendordep by going to "WPILib: Manage Vendor Libraries" > "Install new libraries (online)" in VSCode and pasting in the URL below.
+Install the URCL vendordep by following the instructions to install [3rd party libraries](https://docs.wpilib.org/en/stable/docs/software/vscode-overview/3rd-party-libraries.html). Use the following vendor JSON URL:
 
 ```
 https://raw.githubusercontent.com/Mechanical-Advantage/URCL/maven/URCL.json
@@ -63,6 +63,23 @@ void Robot::RobotInit() {
 ```
 
 </TabItem>
+<TabItem value="python" label="Python">
+
+```python
+import urcl
+import wpilib
+
+class Robot(wpilib.TimedRobot):
+    def robotInit(self):
+        # If publishing to NetworkTables and DataLog
+        wpilib.DataLogManager.start()
+        urcl.start()
+
+        # If logging only to DataLog
+        urcl.start(wpilib.DataLogManager.getLog())
+```
+
+</TabItem>
 <TabItem value="advantagekit" label="AdvantageKit">
 
 ```java
@@ -81,6 +98,12 @@ URCL compatibility with AdvantageKit is provided for convenience only; the data 
 </Tabs>
 
 To more easily identify devices in the log, CAN IDs can be assigned to aliases by passing a map object to the `start()` or `startExternal()` method. The keys are CAN IDs and the values are strings for the names to use in the log. Any devices not assigned an alias will be logged using their default names.
+
+:::warning
+To minimize CAN utilization, most status frames for Spark devices are **disabled by default** until an associated getter method is called. Any data included in these disabled status frames will not be available in the URCL log.
+
+For more details, check the [REVLib documentation](https://docs.revrobotics.com/revlib/24-to-25#setting-status-periods). We recommend using the [`SignalsConfig`](https://codedocs.revrobotics.com/java/com/revrobotics/spark/config/signalsconfig) when configuring the Spark to manually enable any signals you wish to include in the log file.
+:::
 
 ## SysId Usage
 

@@ -36,6 +36,12 @@ This folder should contain a file named "config.json" and one or more asset file
 
 ## 3D Robot Models
 
+### Video Tutorial
+
+<iframe width="100%" style={{"aspect-ratio": "16 / 9"}} src="https://www.youtube.com/embed/unX1PsPi0VA" title="Configuring Custom Robot Models for AdvantageScope" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+### Overview
+
 A model must be included in the folder with the name "model.glb". CAD files must be converted to glTF; see [this page](../more-features/gltf-convert.md) for details. The config file must be in the following format:
 
 ```json
@@ -77,6 +83,10 @@ Setting up articulated components can be complex and time-consuming. Consider ut
 Robot models can contain articulated components for visualizing mechanism data (see [here](../tab-reference/3d-field.md) for details). The base glTF model should include no components, then each component should be exported as a separate glTF model. Components models follow the naming convention "model_INDEX.glb", so the first articulated component would be "model_0.glb"
 
 Component configuration is provided in the robot's config file. An array of components should be provided under the "components" key. When no component poses are provided by the user in AdvantageScope, the component models will be positioned using the default robot rotations and position (see above). When component poses are provided by the user, the "zeroed" rotations and position are instead applied to bring each component to the robot origin. The user's poses are then applied to move each component to the correct location on the robot.
+
+:::tip
+When positioning 3D components relative to the robot, the origin of the coordinate system matches the published pose of the robot. Note that this pose generally uses a height of zero, which is the floor plane and NOT the robot bellypan (for typical 2D robot movement).
+:::
 
 ```json
 "components": [

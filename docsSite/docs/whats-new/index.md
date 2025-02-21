@@ -2,9 +2,15 @@
 
 <h2 style={{textAlign: "center"}}>Swift, Simple, Smart</h2>
 
-The 2025 version of AdvantageScope is now in **beta**, and includes over **130 new features and updates!** Check the [full changelog](./full-changelog.md) for a complete list. Some of the most notable new features are explained below.
+The 2025 version of AdvantageScope is now available, and includes over **130 new features and updates!** Check the [full changelog](./full-changelog.md) for a complete list. Some of the most notable new features are explained below.
 
 ![2025 Feature Poster](./img/poster.png)
+
+### 📸 AdvantageScope XR
+
+AdvantageScope XR brings the 👀 [3D Field](/tab-reference/3d-field) view to life in **augmented reality**, enabling you to visualize data in all new ways. See a simulated auto in life size, review match strategy with a tabletop field model, overlay diagnostic information on a real robot, and so much more! The video below demonstrates several use cases for this feature:
+
+<iframe width="100%" style={{"aspect-ratio": "16 / 9"}} src="https://www.youtube.com/embed/gWPhQyB66DQ" title="AdvantageScope XR: Feature Overview" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 ### ⏩ 100x Faster Log Decoding
 
@@ -61,7 +67,7 @@ Users of the WPILib [persistent alerts](https://docs.wpilib.org/en/latest/docs/s
 
 ### 💬 Console Improvements
 
-The 💬 [Console](../tab-reference/console.md) includes new visualization options, like shading for **error and warning message**, the ability to **exclude unwanted messages**, **highlight of matching filter text**, and **text file exporting**.
+The 💬 [Console](../tab-reference/console.md) includes new visualization options, like shading for **error and warning messages**, the ability to **exclude unwanted messages**, **highlight of matching filter text**, and **text file exporting**.
 
 ![Console tab](../tab-reference/img/console-1.png)
 
@@ -97,8 +103,14 @@ As part of our transition to struct, the legacy number array format for geometry
 
 ![2D & 3D intermixing](./img/2d-3d-mixed.png)
 
+### 🦉 Hoot Log Decoding
+
+Hoot log decoding has been significantly improved, including **support for macOS and Linux** in addition to Windows. Plus, an installation of **Phoenix Tuner X is no longer required** and AdvantageScope can open files from **older versions of Phoenix** while operating **fully offline**.
+
+![Hoot decoding](./img/hoot-decoding.png)
+
 ### 📖 New Documentation Site
 
-You're viewing the updated version of the AdvantageScope documentation, which supports **easier navigation** via the sidebar and a more **refined mobile interface**. This documentation can be accessed online at [docs.advantagescope.org](https://docs.advantagescope.org), or offline by clicking the 📖 icon in the tab bar.
+You're viewing the updated version of the AdvantageScope documentation, which supports **easier navigation** via the sidebar, a **built-in search feature**, and a **refined mobile interface**. This documentation can be accessed online at [docs.advantagescope.org](https://docs.advantagescope.org), or offline by clicking the 📖 icon in the tab bar.
 
 ![Documentation screenshot](./img/docs-screenshot.png)
