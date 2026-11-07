@@ -1,0 +1,153 @@
+# Team 488 build: Windows x64 installer, published as a rolling
+# "team-latest" pre-release on every push to main.
+#
+# Kept separate from upstream's build.yml (disabled on this fork) so
+# merges from Mechanical-Advantage/AdvantageScope don't conflict.
+
+name: Team 488 Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: team-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: team-latest
+  APP_ID: org.team488.advantagescope
+  PRODUCT_NAME: AdvantageScope (Team 488)
+  INSTALLER_NAME: advantagescope-team488-win-x64.exe
+
+jobs:
+  check-formatting:
+    name: Check Formatting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20.x"
+          cache: "npm"
+      - name: Install Node.js dependencies
+        run: npm ci
+        env:
+          YOUTUBE_DL_SKIP_DOWNLOAD: "true"
+      - name: Check formatting
+        run: npm run check-format
+
+  compile:
+    name: Compile
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20.x"
+          cache: "npm"
+      - name: Setup Emscripten
+        uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: 4.0.12
+      - name: Install Node.js dependencies
+        run: npm ci
+        env:
+          YOUTUBE_DL_SKIP_DOWNLOAD: "true"
+      - name: Point update checks and GitHub links at this fork
+        run: |
+          sed -i 's|GITHUB_REPOSITORY = "Mechanical-Advantage/AdvantageScope"|GITHUB_REPOSITORY = "${{ github.repository }}"|' src/main/github.ts
+          grep -q 'GITHUB_REPOSITORY = "${{ github.repository }}"' src/main/github.ts
+      - name: Compile WebAssembly
+        run: npm run wasm:compile
+      - name: Compile bundles
+        run: npm run compile
+      - name: Upload bundles
+        uses: actions/upload-artifact@v7
+        with:
+          name: bundles
+          path: |
+            bundles/**/*.js
+            bundles/**/*.wasm
+
+  build-win:
+    name: Build for Windows (x64)
+    needs: compile
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20.x"
+          cache: "npm"
+      - name: Install Node.js dependencies
+        run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download bundles
+        uses: actions/download-artifact@v8
+        with:
+          name: bundles
+          path: bundles
+      - name: Build documentation
+        run: npm run docs:build-embed
+      - name: Determine version
+        shell: bash
+        run: echo "APP_VERSION=$(node -p 'require("./package.json").version')-team488.${{ github.run_number }}" >> $GITHUB_ENV
+      - name: Build app
+        shell: bash
+        run: >
+          npx electron-builder build --x64 --publish never
+          -c.appId="$APP_ID"
+          -c.productName="$PRODUCT_NAME"
+          -c.extraMetadata.productName="$PRODUCT_NAME"
+          -c.extraMetadata.version="$APP_VERSION"
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          ELECTRON_BUILDER_7Z_FILTER: BCJ # https://github.com/electron-userland/electron-builder/issues/9983
+      - name: Prepare artifact
+        shell: bash
+        run: mv dist/AdvantageScope*.exe "$INSTALLER_NAME"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: ${{ env.INSTALLER_NAME }}
+      - name: Publish rolling pre-release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > notes.md <<EOF
+          Latest Team 488 build of AdvantageScope from \`main\`, rebuilt automatically on every push.
+
+          - **Version:** \`$APP_VERSION\`
+          - **Commit:** ${{ github.sha }}
+          - **Build:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          **Install:** download \`$INSTALLER_NAME\` below and run it. The installer is unsigned, so Windows
+          SmartScreen may warn; choose "More info" then "Run anyway". It installs as "$PRODUCT_NAME"
+          alongside any official AdvantageScope install, with separate settings.
+          EOF
+          gh release delete "$RELEASE_TAG" --yes --cleanup-tag || true
+          gh release create "$RELEASE_TAG" "$INSTALLER_NAME" \
+            --prerelease \
+            --target "${{ github.sha }}" \
+            --title "Team 488 Latest ($APP_VERSION)" \
+            --notes-file notes.md
