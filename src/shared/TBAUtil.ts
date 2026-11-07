@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import MatchInfo, { MatchType, PlayoffType, getElimMatchString } from "./MatchInfo";
 import Preferences from "./Preferences";
 
@@ -56,31 +63,4 @@ export async function getTBAMatchInfo(matchKey: string, preferences: Preferences
     throw new Error();
   }
   return response.json();
-}
-
-export async function getTBAZebraData(matchKey: string, preferences: Preferences): Promise<any> {
-  let response = await fetch("https://www.thebluealliance.com/api/v3/match/" + matchKey + "/zebra_motionworks", {
-    method: "GET",
-    signal: AbortSignal.timeout(3000),
-    headers: [["X-TBA-Auth-Key", preferences.tbaApiKey]]
-  });
-  if (!response.ok) {
-    throw new Error();
-  }
-  return response.json() as Promise<ZebraMatchData | null>;
-}
-
-export interface ZebraMatchData {
-  key: string;
-  times: number[];
-  alliances: {
-    red: [ZebraTeamData, ZebraTeamData, ZebraTeamData];
-    blue: [ZebraTeamData, ZebraTeamData, ZebraTeamData];
-  };
-}
-
-export interface ZebraTeamData {
-  team_key: string;
-  xs: number[];
-  ys: number[];
 }

@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { createUUID } from "../../shared/util";
 
 /** A controller for a single tab. Updates user controls and produces commands to be used by renderers. */
@@ -54,4 +61,14 @@ export class NoopController implements TabController {
   getCommand(): unknown {
     return null;
   }
+}
+
+/** Sets up keyboard activation (Enter / Space) for a focusable custom element. */
+export function setupKeyboardControls(element: HTMLElement) {
+  element.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      element.click();
+    }
+  });
 }

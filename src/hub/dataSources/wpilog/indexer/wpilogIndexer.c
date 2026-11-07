@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -21,6 +28,7 @@ void* run(void* buffer, int bufferSize) {
   int offset = 12 + extraHeaderSize;
 
   // Set up output
+  uint8_t hasInitialTimestamp = 0;
   int64_t minTimestamp = 0;
   int64_t maxTimestamp = 0;
   uint32_t recordCount = 0;
@@ -52,19 +60,25 @@ void* run(void* buffer, int bufferSize) {
 
     // Update timestamp range
     if (entry != CONTROL_ENTRY) {
-      if (recordCount == 0 || timestamp < minTimestamp) {
+      if (!hasInitialTimestamp || timestamp < minTimestamp) {
         minTimestamp = timestamp;
       }
-      if (recordCount == 0 || timestamp > maxTimestamp) {
+      if (!hasInitialTimestamp || timestamp > maxTimestamp) {
         maxTimestamp = timestamp;
       }
+      hasInitialTimestamp = 1;
     }
 
     // Expand output if necessary
     if (recordCount >= recordCapacity) {
       recordCapacity *= 2;
-      output = realloc(
+      void* newOutput = realloc(
           output, OUTPUT_HEADER_SIZE + OUTPUT_RECORD_SIZE * recordCapacity);
+      if (newOutput == NULL) {
+        // Maximum heap size has been reached, exit early
+        break;
+      }
+      output = newOutput;
     }
 
     // Write record to output

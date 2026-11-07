@@ -1,12 +1,17 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
+import { AnsiUp } from "ansi_up";
 import { SelectionMode } from "../Selection";
-import LogField from "../log/LogField";
-import { arraysEqual, formatTimeWithMS, htmlEncode } from "../util";
+import { IS_LITE } from "../buildConstants";
+import { formatTimeWithMS } from "../util";
 import TabRenderer from "./TabRenderer";
 
 export default class ConsoleRenderer implements TabRenderer {
-  private ERROR_TEXT = "error";
-  private WARNING_TEXT = "warning";
-
   private TABLE_CONTAINER: HTMLElement;
   private TABLE_BODY: HTMLElement;
   private JUMP_INPUT: HTMLInputElement;
@@ -22,14 +27,18 @@ export default class ConsoleRenderer implements TabRenderer {
   private hasController: boolean;
   private key: string | null = null;
   private keyAvailable = false;
-  private timestamps: number[] = [];
-  private values: string[] = [];
+  private lines: { timestamp: number; value: string; isError: boolean; isWarning: boolean }[] = [];
   private renderedTimestamps: number[] = [];
   private renderedValues: string[] = [];
+  private renderedRawValues: string[] = [];
+  private lastFilter: string = "";
   private lastScrollPosition: number | null = null;
   private selectionMode: SelectionMode = SelectionMode.Idle;
   private selectedTime: number | null = null;
   private hoveredTime: number | null = null;
+  private lastDisplayOffset: number | null = null;
+  private lastIsStartAt0: boolean | null = null;
+  private displayOffset = 0;
 
   constructor(root: HTMLElement, hasController: boolean) {
     this.hasController = hasController;
@@ -44,14 +53,20 @@ export default class ConsoleRenderer implements TabRenderer {
       "highlight-button"
     )[0] as HTMLButtonElement;
     this.FILTER_INPUT = this.TABLE_BODY.firstElementChild?.lastElementChild?.lastElementChild as HTMLInputElement;
+
     this.FIELD_CELL = this.TABLE_BODY.firstElementChild?.lastElementChild as HTMLElement;
     this.FIELD_TEXT = this.FIELD_CELL.firstElementChild?.firstElementChild as HTMLElement;
     this.FIELD_DELETE = this.FIELD_CELL.firstElementChild?.lastElementChild as HTMLButtonElement;
+
     this.HAND_ICON = root.getElementsByClassName("large-table-hand-icon")[0] as HTMLElement;
+
+    // Hide export button for Lite
+    if (IS_LITE && this.EXPORT_BUTTON !== null) {
+      this.EXPORT_BUTTON.hidden = true;
+    }
 
     // Jump input handling
     let jump = () => {
-      // Determine target time
       let targetTime = Number(this.JUMP_INPUT.value);
       if (this.JUMP_INPUT.value === "") {
         if (this.selectionMode !== SelectionMode.Idle) {
@@ -59,11 +74,13 @@ export default class ConsoleRenderer implements TabRenderer {
         } else {
           targetTime = 0;
         }
+      } else {
+        targetTime = targetTime - this.displayOffset;
       }
 
       // Find target row
-      let targetRow = this.timestamps.findIndex((value) => value > targetTime);
-      if (targetRow === -1) targetRow = this.timestamps.length;
+      let targetRow = this.lines.findIndex((l) => l.timestamp > targetTime);
+      if (targetRow === -1) targetRow = this.lines.length;
       if (targetRow < 1) targetRow = 1;
       targetRow -= 1;
       this.TABLE_CONTAINER.scrollTop = Array.from(this.TABLE_BODY.children).reduce((totalHeight, row, rowIndex) => {
@@ -83,13 +100,13 @@ export default class ConsoleRenderer implements TabRenderer {
     // Export button
     if (this.EXPORT_BUTTON !== null) {
       this.EXPORT_BUTTON.addEventListener("click", () => {
-        if (this.values.length === 0) {
+        if (this.lines.length === 0) {
           window.sendMainMessage("error", {
             title: "Cannot export console log",
             content: "Please add a field with console data, then try again."
           });
         } else {
-          window.sendMainMessage("export-console", this.values.join("\n"));
+          window.sendMainMessage("export-console", this.lines.map((l) => l.value).join("\n"));
         }
       });
     }
@@ -107,8 +124,16 @@ export default class ConsoleRenderer implements TabRenderer {
 
     // Select filter
     window.addEventListener("keydown", (event) => {
-      if (root === null || root.hidden || event.target !== document.body) return;
-      if (event.metaKey && event.key === "f") {
+      if (
+        root === null ||
+        root.hidden ||
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        (event.target instanceof HTMLElement && event.target.isContentEditable)
+      ) {
+        return;
+      }
+      if ((window.platform === "darwin" ? event.metaKey : event.ctrlKey) && event.key === "f") {
         this.FILTER_INPUT.select();
       }
     });
@@ -145,23 +170,33 @@ export default class ConsoleRenderer implements TabRenderer {
     this.selectedTime = command.selectedTime;
     this.hoveredTime = command.hoveredTime;
 
-    // Get data from field
-    let field = command.keyAvailable ? LogField.fromSerialized(command.serialized) : null;
-    let fieldData = field === null ? undefined : field.getString(-Infinity, Infinity);
-    let newTimestamps = fieldData === undefined ? [] : fieldData.timestamps;
-    let newValues = fieldData === undefined ? [] : fieldData.values;
+    // Check if data changed
+    let dataChanged = command.lines.length !== this.lines.length;
+    if (!dataChanged) {
+      for (let i = 0; i < command.lines.length; i++) {
+        if (
+          command.lines[i].timestamp !== this.lines[i].timestamp ||
+          command.lines[i].value !== this.lines[i].value ||
+          command.lines[i].isError !== this.lines[i].isError ||
+          command.lines[i].isWarning !== this.lines[i].isWarning
+        ) {
+          dataChanged = true;
+          break;
+        }
+      }
+    }
 
     // Update values
-    if (
-      command.key !== this.key ||
-      command.keyAvailable !== this.keyAvailable ||
-      !arraysEqual(newTimestamps, this.timestamps) ||
-      !arraysEqual(newValues, this.values)
-    ) {
+    let isStartAt0 = window.preferences?.timestamps !== "original";
+    let formatChanged = command.displayOffset !== this.lastDisplayOffset || isStartAt0 !== this.lastIsStartAt0;
+    this.lastDisplayOffset = command.displayOffset;
+    this.lastIsStartAt0 = isStartAt0;
+
+    if (command.key !== this.key || command.keyAvailable !== this.keyAvailable || dataChanged || formatChanged) {
       this.key = command.key;
       this.keyAvailable = command.keyAvailable;
-      this.timestamps = newTimestamps;
-      this.values = newValues;
+      this.lines = command.lines;
+      this.displayOffset = command.displayOffset;
       this.updateData();
     }
 
@@ -171,7 +206,12 @@ export default class ConsoleRenderer implements TabRenderer {
     // Update placeholder for jump input
     let selectedTime = this.selectedTime;
     let placeholder = selectedTime === null ? 0 : selectedTime;
-    this.JUMP_INPUT.placeholder = formatTimeWithMS(placeholder);
+    let displayPlaceholder = placeholder + command.displayOffset;
+    let placeholderText = formatTimeWithMS(displayPlaceholder);
+    if (isStartAt0) {
+      placeholderText = "+" + placeholderText;
+    }
+    this.JUMP_INPUT.placeholder = placeholderText;
 
     // Scroll to bottom if locked
     if (this.selectionMode === SelectionMode.Locked) {
@@ -186,6 +226,8 @@ export default class ConsoleRenderer implements TabRenderer {
 
   /** Updates the field text and data. */
   updateData() {
+    let isStartAt0 = window.preferences?.timestamps !== "original";
+
     // Update field text
     if (this.key === null) {
       this.FIELD_TEXT.innerText = "";
@@ -207,34 +249,30 @@ export default class ConsoleRenderer implements TabRenderer {
     this.HAND_ICON.style.opacity = showHand ? "0.15" : "0";
 
     // Get data
-    let timestamps = this.timestamps;
-    let values = this.values;
+    let lines = this.lines;
     const filter = this.FILTER_INPUT.value.toLowerCase();
     if (filter.startsWith("!") ? filter.length > 1 : filter.length > 0) {
-      let filteredTimestamps: number[] = [];
-      let filteredValues: string[] = [];
-      for (let i = 0; i < timestamps.length; i++) {
-        let value = values[i];
+      let filteredLines: typeof this.lines = [];
+      for (let i = 0; i < lines.length; i++) {
+        let value = lines[i].value;
         if (
           filter.startsWith("!")
             ? !value.toLowerCase().includes(filter.slice(1).toLowerCase())
             : value.toLowerCase().includes(filter.toLowerCase())
         ) {
-          filteredTimestamps.push(timestamps[i]);
-          filteredValues.push(value);
+          filteredLines.push(lines[i]);
         }
       }
-      timestamps = filteredTimestamps;
-      values = filteredValues;
+      lines = filteredLines;
     }
 
     // Clear extra rows
-    while (this.TABLE_BODY.children.length - 1 > timestamps.length) {
+    while (this.TABLE_BODY.children.length - 1 > lines.length) {
       this.TABLE_BODY.removeChild(this.TABLE_BODY.lastElementChild!);
     }
 
     // Add new rows
-    while (this.TABLE_BODY.children.length - 1 < timestamps.length) {
+    while (this.TABLE_BODY.children.length - 1 < lines.length) {
       let row = document.createElement("tr");
       this.TABLE_BODY.appendChild(row);
       let timestampCell = document.createElement("td");
@@ -260,46 +298,32 @@ export default class ConsoleRenderer implements TabRenderer {
     }
 
     // Update values
-    for (let i = 0; i < values.length; i++) {
+    for (let i = 0; i < lines.length; i++) {
+      let value = lines[i].value;
+      let timestamp = lines[i].timestamp;
+
       // Format value
-      let valueFormatted = "";
-      if (filter.length > 0 && !filter.startsWith("!")) {
-        let lastPosition = -1;
-        let position = -1;
-        while (
-          position + filter.length < values[i].length &&
-          (position = values[i]
-            .toLowerCase()
-            .indexOf(filter.toLowerCase(), position === -1 ? 0 : position + filter.length)) > -1
-        ) {
-          if (lastPosition === -1) {
-            valueFormatted += htmlEncode(values[i].substring(0, position));
-          } else {
-            valueFormatted += htmlEncode(values[i].substring(lastPosition + filter.length, position));
-          }
-          valueFormatted +=
-            '<span class="highlight">' +
-            htmlEncode(values[i].substring(position, position + filter.length)) +
-            "</span>";
-          lastPosition = position;
-        }
-        if (lastPosition !== -1) {
-          valueFormatted += values[i].substring(lastPosition + filter.length);
-        }
+      let valueFormatted: string;
+      if (
+        this.lastFilter === filter &&
+        i < this.renderedRawValues.length &&
+        this.renderedRawValues[i] === value &&
+        this.renderedTimestamps[i] === timestamp
+      ) {
+        valueFormatted = this.renderedValues[i];
       } else {
-        valueFormatted = htmlEncode(values[i]);
+        valueFormatted = this.formatValue(value, this.FILTER_INPUT.value);
       }
-      valueFormatted = valueFormatted.replaceAll("\n", "<br />");
 
       // Update highlight
       let row = this.TABLE_BODY.children[i + 1];
       if (this.HIGHLIGHT_BUTTON.classList.contains("active")) {
-        if (values[i].toLowerCase().includes(this.ERROR_TEXT)) {
+        if (lines[i].isError) {
           row.classList.add("error");
         } else {
           row.classList.remove("error");
         }
-        if (values[i].toLowerCase().includes(this.WARNING_TEXT)) {
+        if (lines[i].isWarning) {
           row.classList.add("warning");
         } else {
           row.classList.remove("warning");
@@ -311,34 +335,44 @@ export default class ConsoleRenderer implements TabRenderer {
 
       // Check if value has changed
       let hasChanged = false;
-      if (i > this.renderedTimestamps.length) {
+      if (i >= this.renderedTimestamps.length) {
         hasChanged = true; // New row
         this.renderedValues.push(valueFormatted);
-      } else if (this.renderedTimestamps[i] !== timestamps[i] || this.renderedValues[i] !== valueFormatted) {
+        this.renderedRawValues.push(value);
+      } else if (this.renderedTimestamps[i] !== timestamp || this.renderedValues[i] !== valueFormatted) {
         hasChanged = true; // Data has changed
         this.renderedValues[i] = valueFormatted;
+        this.renderedRawValues[i] = value;
       }
 
       // Update cell contents
+      let displayTime = timestamp + this.displayOffset;
+      let text = formatTimeWithMS(displayTime);
+      if (isStartAt0) {
+        text = "+" + text;
+      }
+      if ((row.children[0] as HTMLElement).textContent !== text) {
+        (row.children[0] as HTMLElement).textContent = text;
+      }
       if (hasChanged) {
-        (row.children[0] as HTMLElement).innerText = formatTimeWithMS(timestamps[i]);
         (row.children[1] as HTMLElement).innerHTML = valueFormatted;
       }
     }
-    this.renderedTimestamps = timestamps;
+    this.renderedTimestamps = lines.map((l) => l.timestamp);
+    this.renderedRawValues = lines.map((l) => l.value);
+    this.lastFilter = filter;
   }
 
   /** Updates highlighted times (selected & hovered). */
   private updateHighlights() {
-    if (this.timestamps.length === 0) return;
+    if (this.renderedTimestamps.length === 0) return;
     let highlight = (time: number | null, className: string) => {
       Array.from(this.TABLE_BODY.children).forEach((row) => row.classList.remove(className));
       if (time) {
         let target = this.renderedTimestamps.findIndex((value) => value > time);
-        if (target === -1) target = this.renderedTimestamps.length;
-        if (target < 1) target = 1;
-        target -= 1;
-        this.TABLE_BODY.children[target + 1].classList.add(className);
+        if (target === -1) target = this.renderedTimestamps.length; // Use the last timestamp
+        if (target < 1) target = 1; // Use the first timestamp (0 is the header cell, so the indexes of console cells start at 1)
+        this.TABLE_BODY.children[target].classList.add(className);
       }
     };
     switch (this.selectionMode) {
@@ -357,12 +391,61 @@ export default class ConsoleRenderer implements TabRenderer {
         break;
     }
   }
+
+  /** Formats a console log line containing ANSI escape sequences to HTML with filter highlighting. */
+  private formatValue(value: string, filter: string): string {
+    let normalized = value.replace(/\\(?:033|x1b|x1B|e)(?=\[[0-9;:]*[a-zA-Z])/g, "\x1b");
+    normalized = normalized.replace(/\\r\\n|\\n/g, "\n");
+
+    const ansiUp = new AnsiUp();
+    let html = ansiUp.ansi_to_html(normalized);
+
+    if (filter.length > 0 && !filter.startsWith("!")) {
+      const parts = html.split(/(<[^>]*>)/g);
+      const filterLower = filter.toLowerCase();
+      html = parts
+        .map((part) => {
+          if (part.startsWith("<") && part.endsWith(">")) {
+            return part;
+          }
+          let formatted = "";
+          let lastPosition = -1;
+          let position = -1;
+          while (
+            position + filter.length < part.length &&
+            (position = part.toLowerCase().indexOf(filterLower, position === -1 ? 0 : position + filter.length)) > -1
+          ) {
+            if (lastPosition === -1) {
+              formatted += part.substring(0, position);
+            } else {
+              formatted += part.substring(lastPosition + filter.length, position);
+            }
+            formatted += '<span class="highlight">' + part.substring(position, position + filter.length) + "</span>";
+            lastPosition = position;
+          }
+          if (lastPosition !== -1) {
+            formatted += part.substring(lastPosition + filter.length);
+          } else {
+            formatted = part;
+          }
+          return formatted;
+        })
+        .join("");
+    }
+    return html.replaceAll("\n", "<br />");
+  }
 }
 
 export type ConsoleRendererCommand = {
   key: string | null;
   keyAvailable: boolean;
-  serialized: any;
+  lines: {
+    timestamp: number;
+    value: string;
+    isError: boolean;
+    isWarning: boolean;
+  }[];
+  displayOffset: number;
 
   selectionMode: SelectionMode;
   selectedTime: number | null;

@@ -1,6 +1,13 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { MatchType } from "../../shared/MatchInfo";
 import VideoSource from "../../shared/VideoSource";
-import { getEnabledData, getMatchInfo } from "../../shared/log/LogUtil";
+import { getEnabledData, getMatchInfo } from "../../shared/log/RobotState";
 import { createUUID } from "../../shared/util";
 import TabController from "./TabController";
 
@@ -28,7 +35,7 @@ export default class VideoController implements TabController {
   private fps: number | null = null;
   private totalFrames: number | null = null;
   private completedFrames: number | null = null;
-  private matchStartFrame = -1;
+  private autoEndFrame = -1;
 
   private locked: boolean = false;
   private lockedStartLog: number = 0;
@@ -171,7 +178,15 @@ export default class VideoController implements TabController {
     this.SKIP_BACK_BUTTON.addEventListener("click", () => skipTime(-5));
     this.SKIP_FORWARD_BUTTON.addEventListener("click", () => skipTime(5));
     window.addEventListener("keydown", (event) => {
-      if (root === null || root.hidden || event.target !== document.body || event.metaKey) return;
+      if (
+        root === null ||
+        root.hidden ||
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        (event.target instanceof HTMLElement && event.target.isContentEditable) ||
+        (window.platform === "darwin" ? event.metaKey : event.ctrlKey)
+      )
+        return;
       switch (event.code) {
         case "ArrowUp":
         case "ArrowDown":
@@ -315,24 +330,27 @@ export default class VideoController implements TabController {
       }
 
       // Lock time when match start frame received
-      if (this.matchStartFrame <= 0 && data.matchStartFrame > 0 && !this.locked) {
-        let enabledTime: number | null = null;
+      if (this.autoEndFrame <= 0 && data.autoEndFrame > 0 && !this.locked) {
+        let autoEndTime: number | null = null;
         let enabledData = getEnabledData(window.log);
         if (enabledData) {
+          let wasEnabledLastCycle: boolean = false;
           for (let i = 0; i < enabledData.timestamps.length; i++) {
-            if (enabledData.values[i]) {
-              enabledTime = enabledData.timestamps[i];
+            if (wasEnabledLastCycle && !enabledData.values[i]) {
+              autoEndTime = enabledData.timestamps[i];
               break;
             }
+
+            wasEnabledLastCycle = enabledData.values[i];
           }
         }
-        if (enabledTime !== null) {
+        if (autoEndTime !== null) {
           this.playing = false;
           this.locked = true;
-          this.lockedStartLog = enabledTime - (data.matchStartFrame - 1) / this.fps!;
+          this.lockedStartLog = autoEndTime - (data.autoEndFrame - 1) / this.fps!;
         }
       }
-      this.matchStartFrame = data.matchStartFrame;
+      this.autoEndFrame = data.autoEndFrame;
     } else {
       // Start to load new source, reset controls
       this.locked = false;

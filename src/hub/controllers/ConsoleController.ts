@@ -1,3 +1,11 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
+import { LogFieldIterator } from "../../shared/log/LogUtil";
 import LoggableType from "../../shared/log/LoggableType";
 import { ConsoleRendererCommand } from "../../shared/renderers/ConsoleRenderer";
 import { createUUID } from "../../shared/util";
@@ -25,7 +33,13 @@ export default class ConsoleController implements TabController {
       let rect = this.TABLE_CONTAINER.getBoundingClientRect();
       let active =
         dragData.x > rect.left && dragData.x < rect.right && dragData.y > rect.top && dragData.y < rect.bottom;
-      let validType = window.log.getType(dragData.data.fields[0]) === LoggableType.String;
+      let fieldType = window.log.getType(dragData.data.fields[0]);
+      let structuredType = window.log.getStructuredType(dragData.data.fields[0]);
+      let validType =
+        fieldType === LoggableType.String ||
+        ["Console", "ConsoleLineTimestamp", "ErrorInfoTimestamp", "ProgramCrashInfoTimestamp"].includes(
+          structuredType || ""
+        );
       this.DRAG_HIGHLIGHT.hidden = true;
       if (active && validType) {
         if (dragData.end) {
@@ -58,7 +72,12 @@ export default class ConsoleController implements TabController {
 
   getActiveFields(): string[] {
     if (this.field !== null) {
-      return [this.field];
+      let structuredType = window.log.getStructuredType(this.field);
+      if (structuredType === "Console") {
+        return [this.field + "/ConsoleLine", this.field + "/ErrorInfo", this.field + "/ProgramCrashInfo"];
+      } else {
+        return [this.field];
+      }
     } else {
       return [];
     }
@@ -70,10 +89,126 @@ export default class ConsoleController implements TabController {
 
   getCommand(): ConsoleRendererCommand {
     const isAvailable = this.field !== null && window.log.getFieldKeys().includes(this.field);
+
+    let lines: { timestamp: number; value: string; isError: boolean; isWarning: boolean }[] = [];
+
+    if (isAvailable && this.field) {
+      let structuredType = window.log.getStructuredType(this.field);
+      let type = window.log.getType(this.field);
+
+      if (type === LoggableType.String) {
+        let fieldData = window.log.getField(this.field)?.getString(-Infinity, Infinity);
+        if (fieldData) {
+          for (let i = 0; i < fieldData.timestamps.length; i++) {
+            let value = fieldData.values[i];
+            let valueLower = value.toLowerCase();
+            lines.push({
+              timestamp: fieldData.timestamps[i],
+              value: value,
+              isError: valueLower.includes("error"),
+              isWarning: valueLower.includes("warning")
+            });
+          }
+        }
+      } else {
+        let keysToProcess: string[] = [];
+        if (structuredType === "Console") {
+          keysToProcess = [this.field + "/ConsoleLine", this.field + "/ErrorInfo", this.field + "/ProgramCrashInfo"];
+        } else if (
+          ["ConsoleLineTimestamp", "ErrorInfoTimestamp", "ProgramCrashInfoTimestamp"].includes(structuredType || "")
+        ) {
+          keysToProcess = [this.field];
+        }
+
+        for (let key of keysToProcess) {
+          let type = window.log.getStructuredType(key);
+          let rawData = window.log.getField(key)?.getRaw(-Infinity, Infinity);
+          if (!rawData) continue;
+
+          if (type === "ConsoleLineTimestamp") {
+            let fieldData = window.log.getField(key + "/ConsoleLine")?.getString(-Infinity, Infinity);
+            let iter = new LogFieldIterator(fieldData);
+            for (let t of rawData.timestamps) {
+              let value = iter.getAtTime(t);
+              if (value !== undefined) {
+                let valueLower = value.toLowerCase();
+                lines.push({
+                  timestamp: t,
+                  value: value,
+                  isError: false,
+                  isWarning: false
+                });
+              }
+            }
+          } else if (type === "ErrorInfoTimestamp") {
+            let detailsData = window.log.getField(key + "/ErrorInfo/Details")?.getString(-Infinity, Infinity);
+            let locationData = window.log.getField(key + "/ErrorInfo/Location")?.getString(-Infinity, Infinity);
+            let callStackData = window.log.getField(key + "/ErrorInfo/CallStack")?.getString(-Infinity, Infinity);
+            let isErrorData = window.log.getField(key + "/ErrorInfo/IsError")?.getBoolean(-Infinity, Infinity);
+
+            let detailsIter = new LogFieldIterator(detailsData);
+            let locationIter = new LogFieldIterator(locationData);
+            let callStackIter = new LogFieldIterator(callStackData);
+            let isErrorIter = new LogFieldIterator(isErrorData);
+
+            for (let t of rawData.timestamps) {
+              let details = detailsIter.getAtTime(t) ?? "";
+              let location = locationIter.getAtTime(t) ?? "";
+              let callStack = callStackIter.getAtTime(t) ?? "";
+              let isError = isErrorIter.getAtTime(t) ?? false;
+
+              let value = details;
+              if (location || callStack) {
+                value += "\n" + location + "\n" + callStack;
+              }
+
+              lines.push({
+                timestamp: t,
+                value: value,
+                isError: isError,
+                isWarning: !isError
+              });
+            }
+          } else if (type === "ProgramCrashInfoTimestamp") {
+            let detailsData = window.log.getField(key + "/ProgramCrashInfo/Details")?.getString(-Infinity, Infinity);
+            let locationData = window.log.getField(key + "/ProgramCrashInfo/Location")?.getString(-Infinity, Infinity);
+            let callStackData = window.log
+              .getField(key + "/ProgramCrashInfo/CallStack")
+              ?.getString(-Infinity, Infinity);
+
+            let detailsIter = new LogFieldIterator(detailsData);
+            let locationIter = new LogFieldIterator(locationData);
+            let callStackIter = new LogFieldIterator(callStackData);
+
+            for (let t of rawData.timestamps) {
+              let details = detailsIter.getAtTime(t) ?? "";
+              let location = locationIter.getAtTime(t) ?? "";
+              let callStack = callStackIter.getAtTime(t) ?? "";
+
+              let value = details;
+              if (location || callStack) {
+                value += "\n" + location + "\n" + callStack;
+              }
+
+              lines.push({
+                timestamp: t,
+                value: value,
+                isError: true,
+                isWarning: false
+              });
+            }
+          }
+        }
+      }
+
+      lines.sort((a, b) => a.timestamp - b.timestamp);
+    }
+
     return {
       key: this.field,
       keyAvailable: isAvailable,
-      serialized: isAvailable ? window.log.getField(this.field!)?.toSerialized() : null,
+      lines: lines,
+      displayOffset: window.log.getTimestampDisplayOffset(),
 
       selectionMode: window.selection.getMode(),
       selectedTime: window.selection.getSelectedTime(),

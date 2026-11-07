@@ -1,5 +1,12 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { SourceListState } from "../../shared/SourceListConfig";
-import { MechanismState, getMechanismState, mergeMechanismStates } from "../../shared/log/LogUtil";
+import { MechanismState, getMechanismState, mergeMechanismStates } from "../../shared/log/LogMechanismState";
 import { MechanismRendererCommand } from "../../shared/renderers/MechanismRenderer";
 import { createUUID } from "../../shared/util";
 import SourceList from "../SourceList";

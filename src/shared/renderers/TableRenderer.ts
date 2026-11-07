@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { SelectionMode } from "../Selection";
 import { getLogValueText } from "../log/LogUtil";
 import { LogValueSetAny } from "../log/LogValueSets";
@@ -35,6 +42,7 @@ export default class TableRenderer implements TabRenderer {
   private selectionMode: SelectionMode = SelectionMode.Idle;
   private selectedTime: number | null = null;
   private hoveredTime: number | null = null;
+  private displayOffset = 0;
 
   constructor(root: HTMLElement, hasController: boolean) {
     this.ROOT = root;
@@ -70,6 +78,7 @@ export default class TableRenderer implements TabRenderer {
           window.selection.setSelectedTime(0);
         }
       } else {
+        targetTime = targetTime - this.displayOffset;
         window.selection.setSelectedTime(targetTime);
       }
       this.selectedTime = targetTime;
@@ -200,6 +209,7 @@ export default class TableRenderer implements TabRenderer {
 
   render(command: TableRendererCommand): void {
     let initialScrollPosition = this.TABLE_CONTAINER.scrollTop;
+    this.displayOffset = command.displayOffset;
     this.selectionMode = command.selectionMode;
     this.selectedTime = command.selectedTime;
     this.hoveredTime = command.hoveredTime;
@@ -241,7 +251,7 @@ export default class TableRenderer implements TabRenderer {
 
     // Update row height (not all platforms render the same way)
     if (this.dataRows.length > 0) {
-      let rowHeight = this.dataRows[0].clientHeight;
+      let rowHeight = this.dataRows[0].getBoundingClientRect().height;
       if (rowHeight > 0 && rowHeight !== this.ROW_HEIGHT_PX) {
         this.ROW_HEIGHT_PX = rowHeight;
       }
@@ -289,9 +299,16 @@ export default class TableRenderer implements TabRenderer {
     // Get cell text
     let cellText: string[][] = [];
     this.dataRowTimestamps = [];
+    let displayOffset = command.displayOffset;
+    let isStartAt0 = window.preferences?.timestamps !== "original";
     for (let i = dataRowStart; i < dataRowEnd; i++) {
       this.dataRowTimestamps.push(this.timestamps[i]);
-      cellText.push([formatTimeWithMS(this.timestamps[i])]);
+      let displayTime = this.timestamps[i] + displayOffset;
+      let text = formatTimeWithMS(displayTime);
+      if (isStartAt0) {
+        text = "+" + text;
+      }
+      cellText.push([text]);
     }
     this.timestampRange =
       this.dataRowTimestamps.length > 0
@@ -370,7 +387,12 @@ export default class TableRenderer implements TabRenderer {
     }
     this.updateHighlights();
     let placeholder = this.selectedTime === null ? 0 : this.selectedTime;
-    this.INPUT_FIELD.placeholder = formatTimeWithMS(placeholder);
+    let displayPlaceholder = placeholder + displayOffset;
+    let placeholderText = formatTimeWithMS(displayPlaceholder);
+    if (isStartAt0) {
+      placeholderText = "+" + placeholderText;
+    }
+    this.INPUT_FIELD.placeholder = placeholderText;
   }
 
   saveState(): unknown {
@@ -382,6 +404,7 @@ export default class TableRenderer implements TabRenderer {
 
 export type TableRendererCommand = {
   timestamps: number[];
+  displayOffset: number;
   fields: {
     key: string;
     isAvailable: boolean;

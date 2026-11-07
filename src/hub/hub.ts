@@ -1,12 +1,20 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { AdvantageScopeAssets } from "../shared/AdvantageScopeAssets";
 import { HubState } from "../shared/HubState";
-import { SIM_ADDRESS, USB_ADDRESS } from "../shared/IPAddresses";
 import NamedMessage from "../shared/NamedMessage";
-import Preferences from "../shared/Preferences";
+import Preferences, { getRobotAddress } from "../shared/Preferences";
 import Selection from "../shared/Selection";
 import { SourceListItemState, SourceListTypeMemory } from "../shared/SourceListConfig";
+import { Distribution, DISTRIBUTION, IS_LITE } from "../shared/buildConstants";
 import Log from "../shared/log/Log";
-import { AKIT_TIMESTAMP_KEYS, MERGE_PREFIX, getEnabledData } from "../shared/log/LogUtil";
+import { MERGE_PREFIX } from "../shared/log/LogKeyUtils";
+import { AKIT_TIMESTAMP_KEYS, getEnabledData } from "../shared/log/RobotState";
 import { calcMockProgress, clampValue, htmlEncode, scaleValue } from "../shared/util";
 import SelectionImpl from "./SelectionImpl";
 import Sidebar from "./Sidebar";
@@ -16,11 +24,10 @@ import WorkerManager from "./WorkerManager";
 import { HistoricalDataSource, HistoricalDataSourceStatus } from "./dataSources/HistoricalDataSource";
 import { LiveDataSource, LiveDataSourceStatus } from "./dataSources/LiveDataSource";
 import LiveDataTuner from "./dataSources/LiveDataTuner";
-import loadZebra from "./dataSources/LoadZebra";
-import PathPlannerSource from "./dataSources/PathPlannerSource";
 import PhoenixDiagnosticsSource from "./dataSources/PhoenixDiagnosticsSource";
+import FTCDashboardSource from "./dataSources/ftcdashboard/FTCDashboardSource";
 import { NT4Publisher, NT4PublisherStatus } from "./dataSources/nt4/NT4Publisher";
-import NT4Source from "./dataSources/nt4/NT4Source";
+import NT4Source, { NT4Mode } from "./dataSources/nt4/NT4Source";
 import RLOGServerSource from "./dataSources/rlog/RLOGServerSource";
 
 // Constants
@@ -39,6 +46,7 @@ declare global {
     typeMemory: SourceListTypeMemory;
     platform: string;
     platformRelease: string;
+    platformArch: string;
     appVersion: string;
     isFullscreen: boolean;
     isFocused: boolean;
@@ -96,6 +104,7 @@ let isExporting = false;
 let logFriendlyName: string | null = null;
 let liveActive = false;
 let liveConnected = false;
+let liveAutoStartComplete = false;
 
 let dragActive = false;
 let dragOffsetX = 0;
@@ -107,7 +116,12 @@ let dragData: any = null;
 // WINDOW UTILITIES
 
 function setWindowTitle(name: string, status?: string) {
-  let title = htmlEncode(name) + (status ? " (" + htmlEncode(status) + ")" : "") + " &mdash; AdvantageScope";
+  let title =
+    htmlEncode(name) +
+    (status ? " (" + htmlEncode(status) + ")" : "") +
+    " &mdash; AdvantageScope" +
+    (IS_LITE ? " Lite" : "") +
+    (DISTRIBUTION === Distribution.LiteDS ? " (DS)" : "");
   document.getElementsByTagName("title")[0].innerHTML = title;
   document.getElementsByClassName("title-bar-text")[0].innerHTML = title;
 }
@@ -126,11 +140,7 @@ function setLoading(progress: number | null) {
 function updateFancyWindow() {
   // Using fancy title bar?
   let releaseSplit = window.platformRelease.split(".");
-  if (
-    window.platform === "darwin" &&
-    Number(releaseSplit[0]) >= 20 && // macOS Big Sur
-    !window.isFullscreen
-  ) {
+  if (window.platform === "darwin" && !window.isFullscreen) {
     document.body.classList.add("fancy-title-bar-mac");
   } else {
     document.body.classList.remove("fancy-title-bar-mac");
@@ -145,22 +155,31 @@ function updateFancyWindow() {
   } else {
     document.body.classList.remove("fancy-title-bar-linux");
   }
+  if (window.platform === "lite") {
+    document.body.classList.add("fancy-title-bar-lite");
+  } else {
+    document.body.classList.remove("fancy-title-bar-lite");
+  }
 
   // Using fancy sidebar?
   if (window.platform === "darwin") {
     document.body.classList.add("fancy-side-bar-mac");
+
+    // macOS Golden Gate switched to a different sidebar style
+    if (Number(releaseSplit[0]) >= 27) {
+      document.body.classList.add("fancy-side-bar-mac-27");
+    } else {
+      document.body.classList.remove("fancy-side-bar-mac-27");
+    }
   } else {
     document.body.classList.remove("fancy-side-bar-mac");
   }
-
-  // Skip background material on Windows until https://github.com/electron/electron/issues/41824 is fixed
-  //
-  // if (window.platform === "win32" && Number(releaseSplit[releaseSplit.length - 1]) >= 22621) {
-  //   // Windows 11 22H2
-  //   document.body.classList.add("fancy-side-bar-win");
-  // } else {
-  //   document.body.classList.remove("fancy-side-bar-win");
-  // }
+  if (window.platform === "win32" && Number(releaseSplit[releaseSplit.length - 1]) >= 22621) {
+    // Windows 11 22H2
+    document.body.classList.add("fancy-side-bar-win");
+  } else {
+    document.body.classList.remove("fancy-side-bar-win");
+  }
 }
 
 function setExporting(exporting: boolean) {
@@ -274,6 +293,13 @@ window.requestAnimationFrame(periodic);
 
 // DATA SOURCE HANDLING
 
+function checkLiveAutoStart() {
+  if (IS_LITE && window.preferences !== null && !liveAutoStartComplete) {
+    startLive(DISTRIBUTION === Distribution.LiteDS ? "ds" : "robot");
+    liveAutoStartComplete = true;
+  }
+}
+
 window.getLoadingFields = () => {
   let output: Set<string> = new Set();
   historicalSources.forEach((entry) => {
@@ -354,6 +380,11 @@ function startHistorical(path: string, clear = true, merge = false) {
           updateLoading();
           if (originalTimelineRange !== null && originalTimelineIsMaxZoom !== null) {
             window.selection.setTimelineRange(originalTimelineRange, originalTimelineIsMaxZoom);
+            let newTimelineRange = window.selection.getTimelineRange();
+            if (window.selection.getTimelineIsMaxZoom() && originalTimelineRange[0] >= 0 && newTimelineRange[0] < 0) {
+              // If the new log data made the locked range negative, limit to positive values
+              window.selection.setTimelineRange([0, newTimelineRange[1]], false);
+            }
             originalTimelineRange = null;
             originalTimelineIsMaxZoom = null;
           }
@@ -362,7 +393,12 @@ function startHistorical(path: string, clear = true, merge = false) {
           setWindowTitle(logFriendlyName, "Error");
           sourceEntry.progress = null;
           updateLoading();
-          let message = "There was a problem while reading the log file. Please try again.";
+          let isCSV = path.endsWith(".csv");
+          let message =
+            "There was a problem while reading the log file. " +
+            (isCSV
+              ? "Please check the documentation for more information on the required format of CSV files."
+              : "Please try again.");
           if (source.getCustomError() !== null) {
             message = source.getCustomError()!;
           }
@@ -387,7 +423,7 @@ function startHistorical(path: string, clear = true, merge = false) {
 }
 
 /** Connects to a live data source. */
-function startLive(isSim: boolean) {
+function startLive(sourceType: "robot" | "sim" | "ds") {
   historicalSources.forEach((entry) => entry.source.stop());
   historicalSources = [];
   liveSource?.stop();
@@ -396,32 +432,39 @@ function startLive(isSim: boolean) {
   setLoading(null);
 
   if (!window.preferences) return;
-  switch (window.preferences.liveMode) {
-    case "nt4":
-      liveSource = new NT4Source(false);
-      break;
-    case "nt4-akit":
-      liveSource = new NT4Source(true);
-      break;
-    case "phoenix":
-      liveSource = new PhoenixDiagnosticsSource();
-      break;
-    case "pathplanner":
-      liveSource = new PathPlannerSource();
-      break;
-    case "rlog":
-      liveSource = new RLOGServerSource();
-      break;
+  if (sourceType === "ds") {
+    liveSource = new NT4Source(NT4Mode.DriverStation);
+  } else {
+    switch (window.preferences.liveMode) {
+      case "nt4":
+        liveSource = new NT4Source(NT4Mode.Default);
+        break;
+      case "nt4-akit":
+        liveSource = new NT4Source(NT4Mode.AdvantageKit);
+        break;
+      case "nt4-systemcore":
+        liveSource = new NT4Source(NT4Mode.Systemcore);
+        break;
+      case "phoenix":
+        liveSource = new PhoenixDiagnosticsSource();
+        break;
+      case "rlog":
+        liveSource = new RLOGServerSource();
+        break;
+      case "ftcdashboard":
+        liveSource = new FTCDashboardSource();
+        break;
+    }
   }
 
   let address = "";
-  if (isSim) {
-    address = SIM_ADDRESS;
-  } else if (window.preferences?.usb) {
-    address = USB_ADDRESS;
+  if (IS_LITE) {
+    address = window.location.hostname;
+  } else if (sourceType === "sim" || sourceType === "ds") {
+    address = "127.0.0.1";
   } else {
     if (window.preferences) {
-      address = window.preferences.rioAddress;
+      address = getRobotAddress(window.preferences, window.platform);
     }
   }
 
@@ -474,9 +517,7 @@ document.addEventListener("drop", (event) => {
       files.push(window.electron.getFilePath(file));
     }
     if (files.length > 0) {
-      files.forEach((file, index) => {
-        startHistorical(file, index === 0, files.length > 1);
-      });
+      window.sendMainMessage("open-files-request", { files: files });
     }
   }
 });
@@ -491,7 +532,7 @@ window.sendMainMessage = (name: string, data?: any) => {
 };
 
 window.addEventListener("message", (event) => {
-  if (event.source === window && event.data === "port") {
+  if (event.data === "port") {
     window.messagePort = event.ports[0];
     window.messagePort.onmessage = (event) => {
       let message: NamedMessage = event.data;
@@ -565,12 +606,14 @@ async function handleMainMessage(message: NamedMessage) {
     case "set-version":
       window.platform = message.data.platform;
       window.platformRelease = message.data.platformRelease;
+      window.platformArch = message.data.platformArch;
       window.appVersion = message.data.appVersion;
       updateFancyWindow();
       break;
 
     case "set-preferences":
       window.preferences = message.data;
+      checkLiveAutoStart();
       break;
 
     case "set-assets":
@@ -602,6 +645,10 @@ async function handleMainMessage(message: NamedMessage) {
 
     case "set-active-satellites":
       window.tabs.setActiveSatellites(message.data);
+      break;
+
+    case "set-active-xr-uuid":
+      window.tabs.setActiveXRUUID(message.data);
       break;
 
     case "call-selection-setter":
@@ -658,14 +705,24 @@ async function handleMainMessage(message: NamedMessage) {
         let enabledData = getEnabledData(window.log);
         let range = window.log.getTimestampRange();
         let firstEnableIndex = enabledData === null ? -1 : enabledData.values.findIndex((value) => value);
-        let lastDisableIndex = enabledData === null ? -1 : enabledData.values.findLastIndex((value) => !value);
+        let lastDisableIndex = -1;
         if (firstEnableIndex !== -1) {
           range[0] = enabledData!.timestamps[firstEnableIndex];
+
+          lastDisableIndex = enabledData === null ? -1 : enabledData.values.findLastIndex((value) => !value);
+          if (
+            enabledData !== null &&
+            enabledData.values.length > 0 &&
+            enabledData.values[enabledData.values.length - 1]
+          ) {
+            // Last value was enabled
+            lastDisableIndex = -1;
+          }
+          if (lastDisableIndex < firstEnableIndex) lastDisableIndex = -1;
+          if (lastDisableIndex !== -1) range[1] = enabledData!.timestamps[lastDisableIndex];
         }
-        if (lastDisableIndex !== -1) {
-          range[1] = enabledData!.timestamps[lastDisableIndex];
-        }
-        window.selection.setTimelineRange(range, firstEnableIndex === -1 && lastDisableIndex === -1);
+        window.selection.unlock();
+        window.selection.setTimelineRange(range, false);
       }
       break;
 
@@ -731,7 +788,7 @@ async function handleMainMessage(message: NamedMessage) {
       if (liveActive) {
         window.sendMainMessage("error", {
           title: "Cannot publish",
-          content: "Publishing is is not allowed from a live source."
+          content: "Publishing is not allowed from a live source."
         });
       } else if (!("NT" in window.log.getFieldTree())) {
         window.sendMainMessage("error", {
@@ -776,24 +833,6 @@ async function handleMainMessage(message: NamedMessage) {
       publisher?.stop();
       break;
 
-    case "load-zebra":
-      if (liveActive) {
-        window.sendMainMessage("error", {
-          title: "Cannot load Zebra data",
-          content: "Loading Zebra data is not allowed while connected to a live source."
-        });
-      } else {
-        setLoading(1);
-        loadZebra()
-          .then(() => {
-            setLoading(null);
-          })
-          .catch(() => {
-            setLoading(null);
-          });
-      }
-      break;
-
     case "set-playback-options":
       window.selection.setPlaybackSpeed(message.data.speed);
       window.selection.setPlaybackLooping(message.data.looping);
@@ -824,7 +863,7 @@ async function handleMainMessage(message: NamedMessage) {
       break;
 
     case "close-tab":
-      window.tabs.close(window.tabs.getSelectedTab());
+      window.tabs.close(window.tabs.getSelectedTab(), message.data);
       break;
 
     case "rename-tab":
@@ -850,8 +889,8 @@ async function handleMainMessage(message: NamedMessage) {
       }
       break;
 
-    case "add-discrete-enabled":
-      window.tabs.addDiscreteEnabled();
+    case "set-robot-mode-visible":
+      window.tabs.setRobotModeVisible(message.data.showRobotMode);
       break;
 
     case "edit-axis":
@@ -869,6 +908,10 @@ async function handleMainMessage(message: NamedMessage) {
 
     case "set-3d-camera":
       window.tabs.set3DCamera(message.data);
+      break;
+
+    case "set-2d-camera":
+      window.tabs.set2DCamera(message.data);
       break;
 
     case "edit-fov":
@@ -925,34 +968,32 @@ async function handleMainMessage(message: NamedMessage) {
       // Load missing fields
       await Promise.all(historicalSources.map((entry) => entry.source.loadAllFields()));
 
-      // Convert to export format
-      WorkerManager.request(
-        "../bundles/hub$exportWorker.js",
-        {
-          options: message.data.options,
-          log: window.log.toSerialized()
-        },
-        (progress: number) => {
-          clearInterval(mockProgressInterval);
-          setLoading(scaleValue(progress, [0, 1], [mockProgress, 1]));
-        }
-      )
-        .then((content) => {
-          window.sendMainMessage("write-export", {
-            path: message.data.path,
-            content: content
-          });
-        })
-        .catch(() => {
-          window.sendMainMessage("error", {
-            title: "Failed to export data",
-            content: "There was a problem while converting to the export format. Please try again."
-          });
-          setLoading(null);
-        })
-        .finally(() => {
-          setExporting(false);
+      try {
+        // Convert to export format
+        const content = await WorkerManager.request(
+          "../bundles/exportWorker.js",
+          {
+            options: message.data.options,
+            log: window.log.toSerialized()
+          },
+          (progress: number) => {
+            clearInterval(mockProgressInterval);
+            setLoading(scaleValue(progress, [0, 1], [mockProgress, 1]));
+          }
+        );
+        window.sendMainMessage("write-export", {
+          path: message.data.path,
+          content: content
         });
+      } catch {
+        window.sendMainMessage("error", {
+          title: "Failed to export data",
+          content: "There was a problem while converting to the export format. Please try again."
+        });
+        setLoading(null);
+      } finally {
+        setExporting(false);
+      }
       break;
 
     case "finish-export":

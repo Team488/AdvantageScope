@@ -1,9 +1,17 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import Selection, { SelectionMode } from "../shared/Selection";
-import { AKIT_TIMESTAMP_KEYS } from "../shared/log/LogUtil";
+import TabType from "../shared/TabType";
+import { AKIT_TIMESTAMP_KEYS } from "../shared/log/RobotState";
 
 export default class SelectionImpl implements Selection {
   private STEP_SIZE = 0.02; // When using left-right arrows keys on non-AdvantageKit logs
-  private TIMELINE_MIN_ZOOM_TIME = 0.05;
+  private TIMELINE_MIN_ZOOM_TIME = 0.001;
   private TIMELINE_ZOOM_BASE = 1.001;
 
   private PLAY_BUTTON = document.getElementsByClassName("play")[0] as HTMLElement;
@@ -37,16 +45,26 @@ export default class SelectionImpl implements Selection {
       button.addEventListener("contextmenu", () => {
         let rect = button.getBoundingClientRect();
         window.sendMainMessage("ask-playback-options", {
-          x: Math.round(rect.right),
-          y: Math.round(rect.top),
           speed: this.playbackSpeed,
-          looping: this.playbackLooping
+          looping: this.playbackLooping,
+          rect: {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height
+          }
         });
       });
     });
 
     window.addEventListener("keydown", (event) => {
-      if (event.target !== document.body) return;
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        (event.target instanceof HTMLElement && event.target.isContentEditable)
+      ) {
+        return;
+      }
       switch (event.code) {
         case "Space":
           event.preventDefault();
@@ -54,6 +72,13 @@ export default class SelectionImpl implements Selection {
           break;
 
         case "KeyL":
+          if (
+            window.tabs.getSelectedTabType() === TabType.Field3d &&
+            !(window.platform === "darwin" ? event.metaKey : event.ctrlKey)
+          ) {
+            return;
+          }
+
           event.preventDefault();
           this.toggleLock();
           break;
@@ -61,7 +86,11 @@ export default class SelectionImpl implements Selection {
         case "ArrowLeft":
         case "ArrowRight":
           // Unlocked video uses arrow keys to navigate by frame
-          if (window.tabs.isUnlockedVideoSelected() || this.mode !== SelectionMode.Static || event.metaKey) {
+          if (
+            window.tabs.isUnlockedVideoSelected() ||
+            this.mode !== SelectionMode.Static ||
+            (window.platform === "darwin" ? event.metaKey : event.ctrlKey)
+          ) {
             return;
           }
 
@@ -223,6 +252,7 @@ export default class SelectionImpl implements Selection {
   unlock() {
     if (this.mode === SelectionMode.Locked) {
       let selectedTime = this.getSelectedTime();
+      this.applyTimelineScroll(0, 0, 0);
       this.setMode(SelectionMode.Static);
       this.staticTime = selectedTime !== null ? selectedTime : 0;
     }
@@ -343,7 +373,9 @@ export default class SelectionImpl implements Selection {
   /** Returns the visible range for the timeline. */
   getTimelineRange(): [number, number] {
     this.applyTimelineScroll(0, 0, 0);
-    return [...this.timelineRange];
+    let safeTimelineRange = [...this.timelineRange] as [number, number];
+    safeTimelineRange[1] = Math.max(safeTimelineRange[1], safeTimelineRange[0] + 1e-3);
+    return safeTimelineRange;
   }
 
   /** Returns whether the timeline is locked to max zoom. */

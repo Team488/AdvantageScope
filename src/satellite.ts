@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { AdvantageScopeAssets } from "./shared/AdvantageScopeAssets";
 import NamedMessage from "./shared/NamedMessage";
 import Preferences from "./shared/Preferences";
@@ -5,17 +12,17 @@ import Selection, { SelectionMode } from "./shared/Selection";
 import TabType, { getTabIcon } from "./shared/TabType";
 import ConsoleRenderer from "./shared/renderers/ConsoleRenderer";
 import DocumentationRenderer from "./shared/renderers/DocumentationRenderer";
+import Field2dRenderer from "./shared/renderers/Field2dRenderer";
+import Field3dRenderer from "./shared/renderers/Field3dRenderer";
 import JoysticksRenderer from "./shared/renderers/JoysticksRenderer";
 import LineGraphRenderer from "./shared/renderers/LineGraphRenderer";
 import MechanismRenderer from "./shared/renderers/MechanismRenderer";
 import MetadataRenderer from "./shared/renderers/MetadataRenderer";
-import OdometryRenderer from "./shared/renderers/OdometryRenderer";
 import PointsRenderer from "./shared/renderers/PointsRenderer";
 import StatisticsRenderer from "./shared/renderers/StatisticsRenderer";
 import SwerveRenderer from "./shared/renderers/SwerveRenderer";
 import TabRenderer from "./shared/renderers/TabRenderer";
 import TableRenderer from "./shared/renderers/TableRenderer";
-import ThreeDimensionRenderer from "./shared/renderers/ThreeDimensionRenderer";
 import VideoRenderer from "./shared/renderers/VideoRenderer";
 import { htmlEncode } from "./shared/util";
 
@@ -62,11 +69,11 @@ function updateVisualizer() {
     case TabType.LineGraph:
       renderer = new LineGraphRenderer(root, false);
       break;
-    case TabType.Odometry:
-      renderer = new OdometryRenderer(root);
+    case TabType.Field2d:
+      renderer = new Field2dRenderer(root);
       break;
-    case TabType.ThreeDimension:
-      renderer = new ThreeDimensionRenderer(root);
+    case TabType.Field3d:
+      renderer = new Field3dRenderer(root);
       break;
     case TabType.Table:
       renderer = new TableRenderer(root, false);
@@ -106,7 +113,7 @@ window.sendMainMessage = (name: string, data?: any) => {
 };
 
 window.addEventListener("message", (event) => {
-  if (event.source === window && event.data === "port") {
+  if (event.data === "port") {
     messagePort = event.ports[0];
     messagePort.onmessage = (event) => {
       let message: NamedMessage = event.data;
@@ -163,14 +170,20 @@ window.addEventListener("message", (event) => {
           break;
 
         case "set-3d-camera":
-          if (type === TabType.ThreeDimension) {
-            (renderer as ThreeDimensionRenderer).set3DCamera(message.data);
+          if (type === TabType.Field3d) {
+            (renderer as Field3dRenderer).set3DCamera(message.data);
+          }
+          break;
+
+        case "set-2d-camera":
+          if (type === TabType.Field2d) {
+            (renderer as Field2dRenderer).set2DCamera(message.data);
           }
           break;
 
         case "edit-fov":
-          if (type === TabType.ThreeDimension) {
-            (renderer as ThreeDimensionRenderer).setFov(message.data);
+          if (type === TabType.Field3d) {
+            (renderer as Field3dRenderer).setFov(message.data);
           }
           break;
 
@@ -198,7 +211,7 @@ function processAspectRatio(aspectRatio: number | null) {
       if (aspectRatio > MAX_ASPECT_RATIO) aspectRatio = MAX_ASPECT_RATIO;
       if (aspectRatio < 1 / MAX_ASPECT_RATIO) aspectRatio = 1 / MAX_ASPECT_RATIO;
     }
-    window.sendMainMessage("set-aspect-ratio", aspectRatio);
+    window.sendMainMessage("set-aspect-ratio", { aspectRatio, lock: type !== TabType.Field2d });
   }
 }
 
@@ -213,7 +226,13 @@ window.addEventListener("beforeunload", () => {
 });
 
 window.addEventListener("keydown", (event) => {
-  if (event.target !== document.body) return;
+  if (
+    event.target instanceof HTMLInputElement ||
+    event.target instanceof HTMLTextAreaElement ||
+    (event.target instanceof HTMLElement && event.target.isContentEditable)
+  ) {
+    return;
+  }
   switch (event.code) {
     case "Space":
       event.preventDefault();

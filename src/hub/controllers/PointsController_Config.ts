@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { SourceListConfig } from "../../shared/SourceListConfig";
 import { indexArray } from "../../shared/util";
 
@@ -10,16 +17,11 @@ const PointsController_Config: SourceListConfig = {
     {
       key: "plus",
       display: "Plus",
-      symbol: "plus",
+      symbol: "add",
       showInTypeName: true,
       color: "#000000",
       darkColor: "#ffffff",
-      sourceTypes: [
-        "Translation2d",
-        "Translation2d[]",
-        "NumberArray",
-        "TargetCorner:16f6ac0dedc8eaccb951f4895d9e18b6[]"
-      ],
+      sourceTypes: ["Translation2d", "Translation2d[]", "TargetCorner:16f6ac0dedc8eaccb951f4895d9e18b6[]"],
       showDocs: true,
       options: [
         {
@@ -49,11 +51,11 @@ const PointsController_Config: SourceListConfig = {
     {
       key: "cross",
       display: "Cross",
-      symbol: "xmark",
+      symbol: "close",
       showInTypeName: true,
       color: "#000000",
       darkColor: "#ffffff",
-      sourceTypes: ["Translation2d", "Translation2d[]", "NumberArray"],
+      sourceTypes: ["Translation2d", "Translation2d[]", "TargetCorner:16f6ac0dedc8eaccb951f4895d9e18b6[]"],
       showDocs: true,
       options: [
         {
@@ -83,11 +85,11 @@ const PointsController_Config: SourceListConfig = {
     {
       key: "circle",
       display: "Circle",
-      symbol: "circle.fill",
+      symbol: "circle",
       showInTypeName: true,
       color: "#000000",
       darkColor: "#ffffff",
-      sourceTypes: ["Translation2d", "Translation2d[]", "NumberArray"],
+      sourceTypes: ["Translation2d", "Translation2d[]", "TargetCorner:16f6ac0dedc8eaccb951f4895d9e18b6[]"],
       showDocs: true,
       options: [
         {
@@ -117,7 +119,7 @@ const PointsController_Config: SourceListConfig = {
     {
       key: "plusSplit",
       display: "Plus/Split",
-      symbol: "plus",
+      symbol: "add",
       showInTypeName: true,
       color: "#000000",
       darkColor: "#ffffff",
@@ -162,7 +164,7 @@ const PointsController_Config: SourceListConfig = {
     {
       key: "crossSplit",
       display: "Cross/Split",
-      symbol: "xmark",
+      symbol: "close",
       showInTypeName: true,
       color: "#000000",
       darkColor: "#ffffff",
@@ -207,7 +209,7 @@ const PointsController_Config: SourceListConfig = {
     {
       key: "circleSplit",
       display: "Circle/Split",
-      symbol: "circle.fill",
+      symbol: "circle",
       showInTypeName: true,
       color: "#000000",
       darkColor: "#ffffff",
@@ -252,7 +254,7 @@ const PointsController_Config: SourceListConfig = {
     {
       key: "component",
       display: "Component",
-      symbol: "number",
+      symbol: "numbers",
       showInTypeName: false,
       color: "#000000",
       darkColor: "#ffffff",

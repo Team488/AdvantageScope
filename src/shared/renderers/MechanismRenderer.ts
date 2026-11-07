@@ -1,5 +1,12 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { Translation2d } from "../geometry";
-import { MechanismState } from "../log/LogUtil";
+import { MechanismState } from "../log/LogMechanismState";
 import TabRenderer from "./TabRenderer";
 
 export default class MechanismRenderer implements TabRenderer {

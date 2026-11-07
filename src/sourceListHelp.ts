@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { ensureThemeContrast } from "./shared/Colors";
 import NamedMessage from "./shared/NamedMessage";
 import { SourceListConfig, SourceListOptionValueConfig } from "./shared/SourceListConfig";
@@ -10,7 +17,7 @@ function isDark() {
 }
 
 window.addEventListener("message", (event) => {
-  if (event.source === window && event.data === "port") {
+  if (event.data === "port") {
     let messagePort = event.ports[0];
     messagePort.onmessage = (event) => {
       let message: NamedMessage = event.data;
@@ -125,18 +132,20 @@ function addItem(
 
   let typeIcon = document.createElement("object");
   typeIcon.classList.add("type-icon");
+  typeIcon.tabIndex = -1;
   typeIcon.type = "image/svg+xml";
   typeIcon.data = "symbols/sourceList/" + symbol + ".svg";
   typeIconContainer.appendChild(typeIcon);
   let updateColor = () => {
     if (typeIcon.contentDocument !== null) {
-      typeIcon.contentDocument.getElementsByTagName("svg")[0].style.color = isDark() ? darkColor : lightColor;
+      let svg = typeIcon.contentDocument.getElementsByTagName("svg")[0];
+      if (svg !== undefined) {
+        svg.style.color = isDark() ? darkColor : lightColor;
+      }
     }
   };
-  typeIcon.addEventListener("load", () => {
-    updateColor();
-    themeCallbacks.push(updateColor);
-  });
+  typeIcon.addEventListener("load", updateColor);
+  themeCallbacks.push(updateColor);
 
   let typeTitle = document.createElement("div");
   typeTitle.classList.add("type-title");
@@ -173,9 +182,11 @@ function addItem(
       Array.from(valuesCell.getElementsByTagName("span")).forEach((span, index) => {
         let valueKey = option.values[index].key;
         if (valueKey.startsWith("#")) {
-          themeCallbacks.push(() => {
+          let updateSpanColor = () => {
             span.style.color = ensureThemeContrast(valueKey);
-          });
+          };
+          updateSpanColor();
+          themeCallbacks.push(updateSpanColor);
         }
       });
     });

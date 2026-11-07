@@ -1,8 +1,17 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
+import { Distribution, DISTRIBUTION } from "./buildConstants";
+
 enum TabType {
   Documentation,
   LineGraph,
-  Odometry,
-  ThreeDimension,
+  Field2d,
+  Field3d,
   Table,
   Console,
   Statistics,
@@ -20,15 +29,34 @@ export function getAllTabTypes(): TabType[] {
   return Object.values(TabType).filter((tabType) => typeof tabType === "number") as TabType[];
 }
 
+export const LITE_COMPATIBLE_TABS =
+  DISTRIBUTION === Distribution.Lite
+    ? [
+        TabType.Documentation,
+        TabType.LineGraph,
+        TabType.Field2d,
+        TabType.Field3d,
+        TabType.Table,
+        TabType.Console,
+        TabType.Statistics,
+        TabType.Joysticks,
+        TabType.Swerve,
+        TabType.Mechanism,
+        TabType.Points,
+        TabType.Metadata
+      ]
+    : // Lite DS
+      [TabType.LineGraph, TabType.Table, TabType.Console, TabType.Statistics, TabType.Joysticks];
+
 export function getDefaultTabTitle(type: TabType): string {
   switch (type) {
     case TabType.Documentation:
       return "";
     case TabType.LineGraph:
       return "Line Graph";
-    case TabType.Odometry:
-      return "Odometry";
-    case TabType.ThreeDimension:
+    case TabType.Field2d:
+      return "2D Field";
+    case TabType.Field3d:
       return "3D Field";
     case TabType.Table:
       return "Table";
@@ -59,9 +87,9 @@ export function getTabIcon(type: TabType): string {
       return "📖";
     case TabType.LineGraph:
       return "📉";
-    case TabType.Odometry:
+    case TabType.Field2d:
       return "🗺";
-    case TabType.ThreeDimension:
+    case TabType.Field3d:
       return "👀";
     case TabType.Table:
       return "🔢";
@@ -94,9 +122,9 @@ export function getTabAccelerator(type: TabType): string {
       switch (type) {
         case TabType.LineGraph:
           return "G";
-        case TabType.Odometry:
-          return "O";
-        case TabType.ThreeDimension:
+        case TabType.Field2d:
+          return "2";
+        case TabType.Field3d:
           return "3";
         case TabType.Table:
           return "T";

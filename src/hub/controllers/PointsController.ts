@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { SourceListItemState, SourceListState } from "../../shared/SourceListConfig";
 import { grabPosesAuto, translation3dTo2d } from "../../shared/geometry";
 import { getOrDefault } from "../../shared/log/LogUtil";
@@ -125,7 +132,7 @@ export default class PointsController implements TabController {
         case "plus":
         case "cross":
         case "circle":
-          let poses = grabPosesAuto(window.log, source.logKey, source.logType, time, this.UUID, "Translation2d");
+          let poses = grabPosesAuto(window.log, source.logKey, source.logType, time, this.UUID);
           sets.push({
             points: poses.map((x) => translation3dTo2d(x.pose.translation)),
             shape: shape,

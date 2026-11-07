@@ -1,7 +1,15 @@
-import { SIM_ADDRESS, USB_ADDRESS } from "../../../shared/IPAddresses";
-import { filterFieldByPrefixes, getOrDefault, logValuesEqual } from "../../../shared/log/LogUtil";
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
+import { getRobotAddress } from "../../../shared/Preferences";
+import { filterFieldByPrefixes } from "../../../shared/log/LogKeyUtils";
+import { getOrDefault, logValuesEqual } from "../../../shared/log/LogUtil";
 import LoggableType from "../../../shared/log/LoggableType";
-import { NT4_Client } from "./NT4";
+import { NT4_Client, NT4_PORTS_DEFAULT } from "./NT4";
 
 /** Publishes the current values of every field to an NT server. */
 export class NT4Publisher {
@@ -19,12 +27,10 @@ export class NT4Publisher {
     // Get address
     let address = "";
     if (isSim) {
-      address = SIM_ADDRESS;
-    } else if (window.preferences?.usb) {
-      address = USB_ADDRESS;
+      address = "127.0.0.1";
     } else {
       if (window.preferences) {
-        address = window.preferences.rioAddress;
+        address = getRobotAddress(window.preferences, window.platform);
       }
     }
 
@@ -32,7 +38,9 @@ export class NT4Publisher {
     statusCallback(NT4PublisherStatus.Connecting);
     this.client = new NT4_Client(
       address,
+      NT4_PORTS_DEFAULT,
       "AdvantageScope",
+      () => {},
       () => {},
       () => {},
       () => {},

@@ -1,6 +1,26 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import Log from "../../../shared/log/Log";
-import { PROTO_PREFIX, STRUCT_PREFIX } from "../../../shared/log/LogUtil";
+import {
+  PHOTON_PREFIX,
+  PROTO_PREFIX,
+  STRUCT_PREFIX,
+  getStructuredTypeFromRaw,
+  isSchema
+} from "../../../shared/log/LogKeyUtils";
 import LoggableType from "../../../shared/log/LoggableType";
+import {
+  AUTONOMOUS_KEYS,
+  ENABLED_KEYS,
+  UTILITY_KEYS,
+  getEnabledKey,
+  getProgramStartTimeKey
+} from "../../../shared/log/RobotState";
 import {
   HistoricalDataSource_WorkerFieldResponse,
   HistoricalDataSource_WorkerRequest,
@@ -15,7 +35,9 @@ let decoder: WPILOGDecoder | null = null;
 const log = new Log(false);
 const entryIds: { [id: number]: string } = {};
 const entryTypes: { [id: string]: string } = {};
+const entryStartTimes: { [id: number]: number } = {};
 const dataRecordPositions: { [id: string]: number[] } = {};
+let clearTime: number | null = null;
 
 function sendResponse(response: HistoricalDataSource_WorkerResponse) {
   self.postMessage(response);
@@ -35,7 +57,9 @@ self.onmessage = async (event) => {
 };
 
 async function start(data: Uint8Array) {
+  clearTime = null;
   let lastProgressValue = 0;
+  let shortLivedFieldNames: Set<string> = new Set();
   decoder = new WPILOGDecoder(data);
 
   try {
@@ -51,9 +75,14 @@ async function start(data: Uint8Array) {
           if (record !== null && record !== undefined) {
             if (record.isStart()) {
               const startData = record.getStartData();
+              if (!(startData.name in dataRecordPositions) || entryTypes[startData.name] !== startData.type) {
+                // If the entry was previously declared with a different type, clear
+                // the old data to avoid a conflict (use the last declared type)
+                dataRecordPositions[startData.name] = [];
+              }
               entryIds[startData.entry] = startData.name;
               entryTypes[startData.name] = startData.type;
-              dataRecordPositions[startData.name] = [];
+              entryStartTimes[startData.entry] = record.getTimestamp();
               switch (startData.type) {
                 case "boolean":
                   log.createBlankField(startData.name, LoggableType.Boolean);
@@ -82,17 +111,24 @@ async function start(data: Uint8Array) {
                   break;
                 default: // Default to raw
                   log.createBlankField(startData.name, LoggableType.Raw);
-                  if (startData.type.startsWith(STRUCT_PREFIX)) {
-                    let schemaType = startData.type.split(STRUCT_PREFIX)[1];
-                    log.setStructuredType(startData.name, schemaType);
-                  } else if (startData.type.startsWith(PROTO_PREFIX)) {
-                    let schemaType = startData.type.split(PROTO_PREFIX)[1];
+                  let schemaType = getStructuredTypeFromRaw(startData.type);
+                  if (schemaType !== null) {
                     log.setStructuredType(startData.name, schemaType);
                   }
                   break;
               }
               log.setWpilibType(startData.name, startData.type);
               log.setMetadataString(startData.name, startData.metadata);
+            } else if (record.isFinish()) {
+              let entry = record.getFinishEntry();
+
+              // Entry has existed for less than a second so ignore
+              if (record.getTimestamp() - entryStartTimes[entry] < 1e6) {
+                shortLivedFieldNames.add(entryIds[entry]);
+                log.deleteField(entryIds[entry]);
+                delete entryIds[entry];
+                delete entryStartTimes[entry];
+              }
             } else if (record.isSetMetadata()) {
               let setMetadataData = record.getSetMetadataData();
               if (setMetadataData.entry in entryIds) {
@@ -126,6 +162,46 @@ async function start(data: Uint8Array) {
     return;
   }
 
+  // Warn about short-lived fields
+  if (shortLivedFieldNames.size > 0) {
+    console.warn("Ignoring short-lived WPILOG entries:", [...shortLivedFieldNames].toSorted());
+  }
+
+  // Load schemas and keys needed to decode struct-based enabled states
+  log.getFieldKeys().forEach((key) => {
+    if (isSchema(key)) {
+      parseField(key, true);
+    }
+  });
+  const ALL_EAGER_KEYS = [...ENABLED_KEYS, ...AUTONOMOUS_KEYS, ...UTILITY_KEYS];
+  log.getFieldKeys().forEach((key) => {
+    const isEager = ALL_EAGER_KEYS.some((eagerKey) => eagerKey.startsWith(key + "/") || eagerKey === key);
+    if (isEager) {
+      parseField(key, true);
+    }
+  });
+
+  // Load enabled field (required for merging)
+  let enabledKey = getEnabledKey(log);
+  if (enabledKey !== undefined) {
+    parseField(enabledKey, true);
+  }
+
+  // Find program start time to clear old data
+  let programStartTimeKey = getProgramStartTimeKey(log);
+  if (programStartTimeKey !== undefined) {
+    parseField(programStartTimeKey, true);
+    let field = log.getField(programStartTimeKey);
+    if (field !== null && field.getType() === LoggableType.Number) {
+      let values = field.toSerialized().values as number[];
+      if (values.length > 0) {
+        clearTime = values[values.length - 1] / 1e9;
+        log.clearBeforeTime(clearTime);
+      }
+    }
+  }
+
+  // Send message
   log.getChangedFields(); // Reset changed fields
   sendResponse({
     type: "initial",
@@ -134,82 +210,102 @@ async function start(data: Uint8Array) {
   });
 }
 
-function parseField(key: string) {
+function parseField(key: string, skipMessage = false) {
   // Parse records
-  const type = entryTypes[key];
-  dataRecordPositions[key].forEach((position) => {
-    const [record, _] = decoder!.getRecordAtPosition(position);
-    if (record === null) return;
-    let timestamp = Math.max(0, record.getTimestamp() / 1000000.0);
-    try {
-      switch (type) {
-        case "boolean":
-          log.putBoolean(key, timestamp, record.getBoolean());
-          break;
-        case "int":
-        case "int64":
-          log.putNumber(key, timestamp, record.getInteger());
-          break;
-        case "float":
-          log.putNumber(key, timestamp, record.getFloat());
-          break;
-        case "double":
-          log.putNumber(key, timestamp, record.getDouble());
-          break;
-        case "string":
-          log.putString(key, timestamp, record.getString());
-          break;
-        case "boolean[]":
-          log.putBooleanArray(key, timestamp, record.getBooleanArray());
-          break;
-        case "int[]":
-        case "int64[]":
-          log.putNumberArray(key, timestamp, record.getIntegerArray());
-          break;
-        case "float[]":
-          log.putNumberArray(key, timestamp, record.getFloatArray());
-          break;
-        case "double[]":
-          log.putNumberArray(key, timestamp, record.getDoubleArray());
-          break;
-        case "string[]":
-          log.putStringArray(key, timestamp, record.getStringArray());
-          break;
-        case "json":
-          log.putJSON(key, timestamp, record.getString());
-          break;
-        case "msgpack":
-          log.putMsgpack(key, timestamp, record.getRaw());
-          break;
-        default: // Default to raw
-          if (type.startsWith(STRUCT_PREFIX)) {
-            let schemaType = type.split(STRUCT_PREFIX)[1];
-            if (schemaType.endsWith("[]")) {
-              log.putStruct(key, timestamp, record.getRaw(), schemaType.slice(0, -2), true);
-            } else {
-              log.putStruct(key, timestamp, record.getRaw(), schemaType, false);
-            }
-          } else if (type.startsWith(PROTO_PREFIX)) {
-            let schemaType = type.split(PROTO_PREFIX)[1];
-            log.putProto(key, timestamp, record.getRaw(), schemaType);
-          } else {
-            log.putRaw(key, timestamp, record.getRaw());
-            if (CustomSchemas.has(type)) {
-              try {
-                CustomSchemas.get(type)!(log, key, timestamp, record.getRaw());
-              } catch {
-                console.error('Failed to decode custom schema "' + type + '"');
-              }
-              log.setGeneratedParent(key);
-            }
-          }
-          break;
-      }
-    } catch (error) {
-      console.error("Failed to decode WPILOG record:", error);
+  if (!(key in entryTypes)) {
+    // Try removing leading slash, sometimes inserted
+    // when a key prefix is used in the main renderer
+    if (key.startsWith("/")) {
+      key = key.slice(1);
     }
-  });
-  delete dataRecordPositions[key]; // Clear memory
+    if (!(key in entryTypes)) {
+      console.warn("Unavailable key requested for parsing:", key);
+      return;
+    }
+  }
+  if (key in dataRecordPositions) {
+    const type = entryTypes[key];
+    dataRecordPositions[key].forEach((position) => {
+      const [record, _] = decoder!.getRecordAtPosition(position);
+      if (record === null) return;
+      let timestamp = record.getTimestamp() / 1000000.0;
+      try {
+        switch (type) {
+          case "boolean":
+            log.putBoolean(key, timestamp, record.getBoolean());
+            break;
+          case "int":
+          case "int64":
+            log.putNumber(key, timestamp, record.getInteger());
+            break;
+          case "float":
+            log.putNumber(key, timestamp, record.getFloat());
+            break;
+          case "double":
+            log.putNumber(key, timestamp, record.getDouble());
+            break;
+          case "string":
+            log.putString(key, timestamp, record.getString());
+            break;
+          case "boolean[]":
+            log.putBooleanArray(key, timestamp, record.getBooleanArray());
+            break;
+          case "int[]":
+          case "int64[]":
+            log.putNumberArray(key, timestamp, record.getIntegerArray());
+            break;
+          case "float[]":
+            log.putNumberArray(key, timestamp, record.getFloatArray());
+            break;
+          case "double[]":
+            log.putNumberArray(key, timestamp, record.getDoubleArray());
+            break;
+          case "string[]":
+            log.putStringArray(key, timestamp, record.getStringArray());
+            break;
+          case "json":
+            log.putJSON(key, timestamp, record.getString());
+            break;
+          case "msgpack":
+            log.putMsgpack(key, timestamp, record.getRaw());
+            break;
+          default: // Default to raw
+            if (type.startsWith(STRUCT_PREFIX)) {
+              let schemaType = type.split(STRUCT_PREFIX)[1];
+              if (schemaType.endsWith("[]")) {
+                log.putStruct(key, timestamp, record.getRaw(), schemaType.slice(0, -2), true);
+              } else {
+                log.putStruct(key, timestamp, record.getRaw(), schemaType, false);
+              }
+            } else if (type.startsWith(PHOTON_PREFIX)) {
+              let schemaType = type.split(PHOTON_PREFIX)[1];
+              log.putPhotonStruct(key, timestamp, record.getRaw(), schemaType);
+            } else if (type.startsWith(PROTO_PREFIX)) {
+              let schemaType = type.split(PROTO_PREFIX)[1];
+              log.putProto(key, timestamp, record.getRaw(), schemaType);
+            } else {
+              log.putRaw(key, timestamp, record.getRaw());
+              if (CustomSchemas.has(type)) {
+                try {
+                  CustomSchemas.get(type)!(log, key, timestamp, record.getRaw());
+                } catch {
+                  console.error('Failed to decode custom schema "' + type + '"');
+                }
+                log.setGeneratedParent(key);
+              }
+            }
+            break;
+        }
+      } catch (error) {
+        console.error("Failed to decode WPILOG record:", error);
+      }
+    });
+    delete dataRecordPositions[key]; // Clear memory
+  }
+
+  if (clearTime !== null) {
+    log.clearBeforeTime(clearTime);
+  }
 
   // Get set of changed fields
   let fieldData: HistoricalDataSource_WorkerFieldResponse[] = [];
@@ -235,8 +331,10 @@ function parseField(key: string) {
   }
 
   // Send result
-  sendResponse({
-    type: "fields",
-    fields: fieldData
-  });
+  if (!skipMessage) {
+    sendResponse({
+      type: "fields",
+      fields: fieldData
+    });
+  }
 }

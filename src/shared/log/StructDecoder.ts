@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 /** Class to manage decoding WPILib structs.
  *
  * Specification: https://github.com/wpilibsuite/allwpilib/blob/main/wpiutil/doc/struct.adoc
@@ -212,8 +219,11 @@ export default class StructDecoder {
         }
       } else {
         // Child struct
-        outputSchemaTypes[valueSchema.name] = valueSchema.type;
-        let child = this.decode(valueSchema.type, valueArray, valueBitLength);
+        let isArray = valueSchema.arrayLength !== null;
+        outputSchemaTypes[valueSchema.name] = valueSchema.type + (isArray ? "[]" : "");
+        let child = isArray
+          ? this.decodeArray(valueSchema.type, valueArray, valueSchema.arrayLength!)
+          : this.decode(valueSchema.type, valueArray, valueBitLength);
         outputData[valueSchema.name] = child.data;
         Object.keys(child.schemaTypes).forEach((field) => {
           outputSchemaTypes[valueSchema.name + "/" + field] = child.schemaTypes[field];
@@ -227,14 +237,18 @@ export default class StructDecoder {
   }
 
   /** Converts struct-encoded data with a known array schema to an object. */
-  decodeArray(name: string, value: Uint8Array): { data: unknown; schemaTypes: { [key: string]: string } } {
+  decodeArray(
+    name: string,
+    value: Uint8Array,
+    arrayLength?: number
+  ): { data: unknown; schemaTypes: { [key: string]: string } } {
     if (!(name in this.schemas)) {
       throw new Error("Schema not defined");
     }
     let outputData: unknown[] = [];
     let outputSchemaTypes: { [key: string]: string } = {};
     let schemaLength = this.schemas[name].length / 8;
-    let length = value.length / schemaLength;
+    let length = arrayLength === undefined ? value.length / schemaLength : arrayLength;
     for (let i = 0; i < length; i++) {
       let decodedData = this.decode(name, value.slice(i * schemaLength, (i + 1) * schemaLength));
       outputData.push(decodedData.data);

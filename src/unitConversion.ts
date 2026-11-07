@@ -1,5 +1,12 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { evaluate } from "mathjs";
-import { GROUPED_UNITS, UnitConversionPreset } from "./shared/units";
+import { Units } from "./shared/units";
 
 const UNIT_TYPE = document.getElementById("unitType") as HTMLInputElement;
 const FROM_UNIT = document.getElementById("fromUnit") as HTMLInputElement;
@@ -34,7 +41,7 @@ function updateUnitOptions() {
     FROM_UNIT.disabled = false;
     TO_UNIT.disabled = false;
 
-    Object.keys(GROUPED_UNITS[type]).forEach((unit, index) => {
+    Object.keys(Units.UNIT_GROUPS[type]).forEach((unit, index) => {
       let option = document.createElement("option");
       option.innerText = unit;
       FROM_UNIT.appendChild(option);
@@ -47,7 +54,7 @@ function updateUnitOptions() {
 }
 
 window.addEventListener("message", (event) => {
-  if (event.source === window && event.data === "port") {
+  if (event.data === "port") {
     let messagePort = event.ports[0];
     messagePort.onmessage = (event) => {
       // Update button focus
@@ -63,10 +70,10 @@ window.addEventListener("message", (event) => {
       }
 
       // Normal message
-      let originalConversion: UnitConversionPreset = event.data;
+      let preset: Units.UnitConversionPreset = event.data;
 
       // Add type options
-      ["none", ...Object.keys(GROUPED_UNITS)].forEach((unitType) => {
+      ["none", ...Object.keys(Units.UNIT_GROUPS)].forEach((unitType) => {
         let option = document.createElement("option");
         option.innerText = unitType;
         UNIT_TYPE.appendChild(option);
@@ -74,16 +81,16 @@ window.addEventListener("message", (event) => {
       UNIT_TYPE.addEventListener("change", () => updateUnitOptions());
 
       // Update values
-      if (originalConversion.type === null) {
+      if (preset.type === null) {
         UNIT_TYPE.value = "none";
         updateUnitOptions();
       } else {
-        UNIT_TYPE.value = originalConversion.type;
+        UNIT_TYPE.value = preset.type;
         updateUnitOptions();
-        FROM_UNIT.value = originalConversion.from!;
-        TO_UNIT.value = originalConversion.to!;
+        FROM_UNIT.value = preset.from!;
+        TO_UNIT.value = preset.to!;
       }
-      EXTRA_FACTOR.value = originalConversion.factor.toString();
+      EXTRA_FACTOR.value = preset.factor.toString();
 
       // Close function
       function confirm() {
@@ -107,7 +114,7 @@ window.addEventListener("message", (event) => {
 
         // Save data
         let unitType = UNIT_TYPE.value === "none" ? null : UNIT_TYPE.value;
-        let conversion: UnitConversionPreset = {
+        let conversion: Units.UnitConversionPreset = {
           type: unitType,
           factor: factor
         };
@@ -120,7 +127,7 @@ window.addEventListener("message", (event) => {
 
       // Set up exit triggers
       EXIT_BUTTON.addEventListener("click", () => {
-        messagePort.postMessage(originalConversion);
+        messagePort.postMessage(null);
       });
       CONFIRM_BUTTON.addEventListener("click", confirm);
       window.addEventListener("keydown", (event) => {

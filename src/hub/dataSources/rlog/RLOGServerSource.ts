@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import Log from "../../../shared/log/Log";
 import { LiveDataSource, LiveDataSourceStatus } from "../LiveDataSource";
 import RLOGDecoder from "./RLOGDecoder";
@@ -18,7 +25,7 @@ export default class RLOGServerSource extends LiveDataSource {
     statusCallback: (status: LiveDataSourceStatus) => void,
     outputCallback: (log: Log, timeSupplier: () => number) => void
   ) {
-    super.connect(address, statusCallback, outputCallback);
+    super.connect(address, statusCallback, outputCallback, false);
 
     if (window.preferences === null) {
       this.setStatus(LiveDataSourceStatus.Error);

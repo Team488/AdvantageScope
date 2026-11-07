@@ -1,6 +1,13 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import * as stats from "simple-statistics";
 import { SourceListItemState, SourceListState } from "../../shared/SourceListConfig";
-import { AKIT_TIMESTAMP_KEYS, getRobotStateRanges } from "../../shared/log/LogUtil";
+import { AKIT_TIMESTAMP_KEYS, getRobotStateRanges } from "../../shared/log/RobotState";
 import { StatisticsRendererCommand, StatisticsRendererCommand_Stats } from "../../shared/renderers/StatisticsRenderer";
 import { arraysEqual, cleanFloat, createUUID } from "../../shared/util";
 import SourceList from "../SourceList";
@@ -42,9 +49,9 @@ export default class StatisticsController implements TabController {
     [this.TIME_RANGE, this.RANGE_MIN, this.RANGE_MAX, this.STEP_SIZE].forEach((input) =>
       input.addEventListener("change", () => (this.shouldUpdate = true))
     );
-    this.STEP_SIZE.addEventListener("change", () => {
-      this.updateHistogramInputs();
-    });
+    [this.RANGE_MIN, this.RANGE_MAX, this.STEP_SIZE].forEach((input) =>
+      input.addEventListener("change", () => this.updateHistogramInputs())
+    );
 
     // Set initial values for histogram inputs
     this.RANGE_MIN.value = "0";
@@ -56,11 +63,11 @@ export default class StatisticsController implements TabController {
   /** Updates the step size for each histogram input. */
   private updateHistogramInputs() {
     if (Number(this.STEP_SIZE.value) <= 0) {
-      this.STEP_SIZE.value = cleanFloat(Number(this.STEP_SIZE.step)).toString();
+      this.STEP_SIZE.value = cleanFloat(Number(this.STEP_SIZE.step) * 0.9).toString();
     }
     let range = Math.abs(Number(this.RANGE_MAX.value) - Number(this.RANGE_MIN.value));
     if (range / Number(this.STEP_SIZE.value) > this.MAX_BINS) {
-      this.STEP_SIZE.value = cleanFloat(Math.ceil(range / this.MAX_BINS)).toString();
+      this.STEP_SIZE.value = cleanFloat(range / this.MAX_BINS).toString();
     }
     let step = Math.pow(10, Math.floor(Math.log10(Number(this.STEP_SIZE.value))));
     this.STEP_SIZE.step = step.toString();

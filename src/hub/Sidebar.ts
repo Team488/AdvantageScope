@@ -1,10 +1,17 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
+import { IS_LITE } from "../shared/buildConstants";
 import { SidebarState } from "../shared/HubState";
 import LogFieldTree from "../shared/log/LogFieldTree";
 import LoggableType from "../shared/log/LoggableType";
 import { getOrDefault, searchFields, TYPE_KEY } from "../shared/log/LogUtil";
 import { SelectionMode } from "../shared/Selection";
 import { arraysEqual, htmlEncode, setsEqual } from "../shared/util";
-import { ZEBRA_LOG_KEY } from "./dataSources/LoadZebra";
 import CustomSchemas from "./dataSources/schema/CustomSchemas";
 
 export default class Sidebar {
@@ -42,8 +49,7 @@ export default class Sidebar {
     "messages",
     "systemTime",
     "DSLog",
-    "DSEvents",
-    ZEBRA_LOG_KEY
+    "DSEvents"
   ];
   private HIDDEN_KEYS = [".schema", "Metadata", "RealMetadata", "ReplayMetadata"];
   private INDENT_SIZE_PX = 20;
@@ -71,7 +77,7 @@ export default class Sidebar {
   private tuningModePublishCallbacks: (() => void)[] = [];
   private tuningValueCache: { [key: string]: string } = {};
   private updateMetadataCallbacks: (() => void)[] = [];
-  private updateLoadingCallbacks: (() => void)[] = [];
+  private updateLoadingCallbacks: ((loadingFields: Set<string>) => void)[] = [];
 
   constructor(getFilenames: () => string[]) {
     this.getFilenames = getFilenames;
@@ -130,7 +136,7 @@ export default class Sidebar {
     Array.from(menuBar.getElementsByTagName("button")).forEach((button, index) => {
       let active = false;
       button.addEventListener("click", () => {
-        if (active) {
+        if (active && !IS_LITE) {
           active = false;
           window.sendMainMessage("close-app-menu", {
             index: index
@@ -140,7 +146,12 @@ export default class Sidebar {
           let rect = button.getBoundingClientRect();
           window.sendMainMessage("open-app-menu", {
             index: index,
-            coordinates: [Math.round(rect.left), Math.round(rect.bottom)]
+            rect: {
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height
+            }
           });
         }
       });
@@ -208,6 +219,18 @@ export default class Sidebar {
     // Tuning button
     this.TUNING_BUTTON.addEventListener("click", () => {
       this.setTuningModeActive(!this.isTuningMode);
+    });
+    this.TUNING_BUTTON.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      let values = Object.keys(this.tuningValueCache)
+        .sort()
+        .map((key) => key + " = " + this.tuningValueCache[key])
+        .join("\n");
+      window.sendMainMessage("ask-open-tuning-context-menu", {
+        isTuningMode: this.isTuningMode,
+        values: values,
+        position: [event.clientX, event.clientY]
+      });
     });
 
     // Periodic functions
@@ -277,6 +300,9 @@ export default class Sidebar {
         if (field.startsWith("/" + hiddenKey)) show = false;
         if (field.startsWith("NT:/" + hiddenKey)) show = false;
         if (field.startsWith("NT:/AdvantageKit/" + hiddenKey)) show = false;
+        if (field.startsWith("DS:/" + hiddenKey)) show = false;
+        if (field.includes("/" + hiddenKey + "/")) show = false;
+        if (field.endsWith("/" + hiddenKey)) show = false;
       });
       return show;
     });
@@ -328,7 +354,7 @@ export default class Sidebar {
     }
     let title: string;
     if (this.fieldCount === 0) {
-      title = "No data available";
+      title = "Open a log or connect to view data";
     } else {
       let runtime = range[1] - range[0];
       let runtimeUnit = "s";
@@ -421,10 +447,19 @@ export default class Sidebar {
 
       // Add new list
       let tree = window.log.getFieldTree();
-      let rootKeys = Object.keys(tree);
+      let rootKeys = Object.keys(tree).filter((x) => !x.startsWith("."));
       if (rootKeys.length === 1 && tree[rootKeys[0]].fullKey === null) {
         // If only one table, use it as the root
         tree = tree[rootKeys[0]].children;
+      }
+      // Repeat to use "DS:/Dscomm/" as the root if available
+      let secondaryRootKeys = Object.keys(tree).filter((x) => !x.startsWith("."));
+      if (
+        secondaryRootKeys.length === 1 &&
+        secondaryRootKeys[0] === "Dscomm" &&
+        tree[secondaryRootKeys[0]].fullKey === null
+      ) {
+        tree = tree[secondaryRootKeys[0]].children;
       }
       Object.keys(tree)
         .filter((key) => !this.HIDDEN_KEYS.includes(key))
@@ -440,7 +475,7 @@ export default class Sidebar {
       // Update type warnings and metadata
       this.updateTypeWarningCallbacks.forEach((callback) => callback());
       this.updateMetadataCallbacks.forEach((callback) => callback());
-      this.updateLoadingCallbacks.forEach((callback) => callback());
+      this.updateLoadingCallbacks.forEach((callback) => callback(window.getLoadingFields()));
     }
   }
 
@@ -599,6 +634,18 @@ export default class Sidebar {
       }
     }
 
+    // Right-click context menu for copying field paths
+    let mouseDownInfo: [number, number, number, number] | null = null;
+    label.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      mouseDownInfo = null;
+      window.sendMainMessage("ask-open-sidebar-context-menu", {
+        title: title,
+        fullTitle: fullTitle,
+        position: [event.clientX, event.clientY]
+      });
+    });
+
     // Full key fields
     if (field.fullKey !== null) {
       // Dragging support
@@ -628,7 +675,6 @@ export default class Sidebar {
             this.selectGroupClearCallbacks.forEach((callback) => callback());
           }
         };
-        let mouseDownInfo: [number, number, number, number] | null = null;
         label.addEventListener("mousedown", (event) => {
           mouseDownInfo = [event.clientX, event.clientY, event.offsetX, event.offsetY];
         });
@@ -704,6 +750,15 @@ export default class Sidebar {
         circle.setAttributeNS(null, "cx", "4.5");
         circle.setAttributeNS(null, "cy", "4.5");
         circle.setAttributeNS(null, "r", "4.5");
+        let line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        svg.appendChild(line);
+        line.setAttributeNS(null, "x1", "0");
+        line.setAttributeNS(null, "y1", "0");
+        line.setAttributeNS(null, "x2", "9");
+        line.setAttributeNS(null, "y2", "9");
+        line.setAttributeNS(null, "stroke-width", "2");
+        line.setAttributeNS(null, "stroke", "white");
+        line.setAttributeNS(null, "clip-path", "url(#booleanCircleClip)");
 
         // Update values periodically
         let firstUpdate = true;
@@ -724,6 +779,7 @@ export default class Sidebar {
           if (value !== null) {
             const darkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
             circle.setAttributeNS(null, "fill", value ? (darkMode ? "lightgreen" : "green") : "red");
+            line.style.display = value ? "none" : "initial";
           }
           let hidden = value === null;
           valueElement.hidden = hidden;
@@ -741,6 +797,7 @@ export default class Sidebar {
           let value = !oldValue;
           let liveTime = window.selection.getCurrentLiveTime();
           if (liveTime !== null) {
+            this.tuningValueCache[field.fullKey!] = value.toString();
             window.tuner?.publish(field.fullKey!, value);
             window.log.putBoolean(field.fullKey!, liveTime, value);
           }
@@ -751,6 +808,7 @@ export default class Sidebar {
             svg.classList.add("tunable");
           } else {
             svg.classList.remove("tunable");
+            delete this.tuningValueCache[field.fullKey!];
           }
         };
         this.setTuningModeActiveCallbacks.push(setTuningModeActive);
@@ -760,6 +818,7 @@ export default class Sidebar {
         numValueInput = document.createElement("input");
         numValueInput.hidden = true;
         numValueInput.type = "number";
+        numValueInput.title = "Set value";
         valueElement.appendChild(numValueInput);
         numValueSpan = document.createElement("span");
         valueElement.appendChild(numValueSpan);
@@ -910,16 +969,18 @@ export default class Sidebar {
       updateMetadata();
 
       // Loading callback
-      let updateLoading = () => {
-        let isLoading = window.getLoadingFields().has(field.fullKey!);
-        if (isLoading) {
+      let lastLoading = false;
+      let updateLoading = (loadingFields: Set<string>) => {
+        let isLoading = loadingFields.has(field.fullKey!);
+        if (isLoading && !lastLoading) {
           label.classList.add("loading");
-        } else {
+        } else if (!isLoading && lastLoading) {
           label.classList.remove("loading");
         }
+        lastLoading = isLoading;
       };
       this.updateLoadingCallbacks.push(updateLoading);
-      updateLoading();
+      updateLoading(window.getLoadingFields());
     }
 
     // Add children
@@ -947,12 +1008,10 @@ export default class Sidebar {
         // Add children if first time
         if (firstExpand) {
           firstExpand = false;
-          let childKeys = Object.keys(field.children);
+          let childKeys = Object.keys(field.children).filter((key) => !this.HIDDEN_KEYS.includes(key));
           if (fullTitle === "/AdvantageKit" || fullTitle === "/NT" || fullTitle.startsWith("/" + this.MERGED_KEY)) {
-            // Apply hidden and known keys
-            childKeys = childKeys
-              .filter((key) => !this.HIDDEN_KEYS.includes(key))
-              .sort((a, b) => this.sortKeys(a, b, true));
+            // Apply known keys sorting
+            childKeys = childKeys.sort((a, b) => this.sortKeys(a, b, true));
           } else {
             childKeys = childKeys.sort((a, b) => this.sortKeys(a, b));
           }

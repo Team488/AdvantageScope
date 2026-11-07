@@ -1,3 +1,12 @@
+<!--
+  Copyright (c) 2021-2026 Littleton Robotics
+  http://github.com/Mechanical-Advantage
+
+  Use of this source code is governed by a BSD
+  license that can be found in the LICENSE file
+  at the root directory of this project.
+-->
+
 <!doctype html>
 <html>
   <head>
@@ -8,14 +17,19 @@
     <link rel="stylesheet" href="global.css" />
     <link rel="stylesheet" href="betaWelcome.css" />
     <script type="module" src="../bundles/betaWelcome.js"></script>
-    <title>Beta</title>
+    <title>Welcome</title>
   </head>
   <body>
     <h1>Welcome 👋</h1>
-    <h2>THIS IS A BETA</h2>
-    <p>
-      Thanks for helping us test and improve upcoming features in AdvantageScope! Please check the boxes below to
+    <h2 class="beta-only">THIS IS A BETA RELEASE</h2>
+    <h2 class="alpha-only" hidden>THIS IS AN ALPHA RELEASE</h2>
+    <p class="desktop-only">
+      Thanks for helping test and improve upcoming features in AdvantageScope! Please check the boxes below to
       acknowledge each statement before continuing.
+    </p>
+    <p class="lite-only" hidden>
+      Thanks for helping test and improve AdvantageScope Lite! Please check the boxes below to acknowledge each
+      statement before continuing.
     </p>
     <table>
       <tbody>
@@ -39,7 +53,7 @@
           <td>
             <input type="checkbox" />
           </td>
-          <td>I agree to fill out one or more short surveys about my experience using the AdvantageScope beta.</td>
+          <td>I agree to provide feedback to the developers if asked about my experience using this release.</td>
         </tr>
       </tbody>
     </table>
@@ -47,6 +61,6 @@
       At any time, click the <span class="purple">purple icon</span> in the title bar to report an issue, request a
       feature, or ask a question.
     </p>
-    <button disabled>Continue</button>
+    <button disabled title="Continue">Continue</button>
   </body>
 </html>

@@ -1,4 +1,11 @@
-import { ChassisSpeeds, Rotation2d, SwerveState } from "../geometry";
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
+import { ModuleVelocity, RobotVelocities, Rotation2d } from "../geometry";
 import { transformPx, wrapRadians } from "../util";
 import TabRenderer from "./TabRenderer";
 
@@ -89,7 +96,7 @@ export default class SwerveRenderer implements TabRenderer {
     // Draw arrow on robot
     context.strokeStyle = strokeColor;
     context.lineWidth = 4;
-    const hasSpeeds = command.speeds.length > 0;
+    const hasSpeeds = command.robotVelocities.length > 0;
     let arrowBack = transformPx(
       centerPx,
       command.rotation,
@@ -131,7 +138,7 @@ export default class SwerveRenderer implements TabRenderer {
       ]);
 
       // Draw module data
-      let drawModuleData = (state: SwerveState, color: string) => {
+      let drawModuleData = (state: ModuleVelocity, color: string) => {
         let fullRotation = command.rotation + state.angle;
         context.fillStyle = color;
         context.strokeStyle = color;
@@ -139,7 +146,7 @@ export default class SwerveRenderer implements TabRenderer {
 
         // Draw rotation
         context.beginPath();
-        if (command.states.length >= 2) {
+        if (command.moduleVelocities.length >= 2) {
           context.moveTo(...moduleCenterPx);
         } else {
           context.moveTo(...transformPx(moduleCenterPx, fullRotation, [moduleRadiusPx, 0]));
@@ -154,10 +161,10 @@ export default class SwerveRenderer implements TabRenderer {
         context.fill();
 
         // Draw speed
-        if (Math.abs(state.speed) <= 0.001) return;
-        let vectorSpeed = state.speed;
+        if (Math.abs(state.velocity) <= 0.001) return;
+        let vectorSpeed = state.velocity;
         let vectorRotation = fullRotation;
-        if (state.speed < 0) {
+        if (state.velocity < 0) {
           vectorSpeed *= -1;
           vectorRotation += Math.PI;
         }
@@ -181,7 +188,7 @@ export default class SwerveRenderer implements TabRenderer {
         context.lineTo(...arrowRight);
         context.stroke();
       };
-      command.states.forEach((set) => {
+      command.moduleVelocities.forEach((set) => {
         if (index < set.values.length) {
           drawModuleData(set.values[index], set.color);
         }
@@ -195,34 +202,35 @@ export default class SwerveRenderer implements TabRenderer {
       context.stroke();
     });
 
-    // Draw chassis speeds
-    command.speeds.forEach((speed) => {
+    // Draw robot velocities
+    command.robotVelocities.forEach((speed) => {
       context.strokeStyle = speed.color;
       context.lineWidth = 4;
 
       // Linear speed
       let angle = Math.atan2(speed.value.vy, speed.value.vx);
       let length = Math.hypot(speed.value.vx, speed.value.vy);
-      if (length < 0.05) return;
-      length *= fullVectorPx;
+      if (length >= 0.05) {
+        length *= fullVectorPx;
 
-      let arrowBack = transformPx(centerPx, command.rotation + angle, [0, 0]);
-      let arrowFront = transformPx(centerPx, command.rotation + angle, [length, 0]);
-      let arrowLeft = transformPx(centerPx, command.rotation + angle, [
-        length - moduleRadiusPx * 0.4,
-        moduleRadiusPx * 0.4
-      ]);
-      let arrowRight = transformPx(centerPx, command.rotation + angle, [
-        length - moduleRadiusPx * 0.4,
-        moduleRadiusPx * -0.4
-      ]);
-      context.beginPath();
-      context.moveTo(...arrowBack);
-      context.lineTo(...arrowFront);
-      context.moveTo(...arrowLeft);
-      context.lineTo(...arrowFront);
-      context.lineTo(...arrowRight);
-      context.stroke();
+        let arrowBack = transformPx(centerPx, command.rotation + angle, [0, 0]);
+        let arrowFront = transformPx(centerPx, command.rotation + angle, [length, 0]);
+        let arrowLeft = transformPx(centerPx, command.rotation + angle, [
+          length - moduleRadiusPx * 0.4,
+          moduleRadiusPx * 0.4
+        ]);
+        let arrowRight = transformPx(centerPx, command.rotation + angle, [
+          length - moduleRadiusPx * 0.4,
+          moduleRadiusPx * -0.4
+        ]);
+        context.beginPath();
+        context.moveTo(...arrowBack);
+        context.lineTo(...arrowFront);
+        context.moveTo(...arrowLeft);
+        context.lineTo(...arrowFront);
+        context.lineTo(...arrowRight);
+        context.stroke();
+      }
 
       // Angular speed
       if (Math.abs(speed.value.omega) > 0.1) {
@@ -259,12 +267,12 @@ export default class SwerveRenderer implements TabRenderer {
 export type SwerveRendererCommand = {
   rotation: Rotation2d;
   frameAspectRatio: number;
-  states: {
-    values: SwerveState[];
+  moduleVelocities: {
+    values: ModuleVelocity[];
     color: string;
   }[];
-  speeds: {
-    value: ChassisSpeeds;
+  robotVelocities: {
+    value: RobotVelocities;
     color: string;
   }[];
 };

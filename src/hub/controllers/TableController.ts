@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { LogValueSetAny } from "../../shared/log/LogValueSets";
 import LoggableType from "../../shared/log/LoggableType";
 import { TableRendererCommand } from "../../shared/renderers/TableRenderer";
@@ -242,6 +249,7 @@ export default class TableController implements TabController {
 
     return {
       timestamps: window.log.getTimestamps(this.fields, this.UUID),
+      displayOffset: window.log.getTimestampDisplayOffset(),
       fields: fieldData,
       selectionMode: window.selection.getMode(),
       selectedTime: window.selection.getSelectedTime(),

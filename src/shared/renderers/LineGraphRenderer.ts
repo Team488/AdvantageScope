@@ -1,6 +1,15 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import ScrollSensor from "../../hub/ScrollSensor";
 import { ensureThemeContrast } from "../Colors";
+import LineGraphFilter from "../LineGraphFilter";
 import { SelectionMode } from "../Selection";
+import { Units } from "../units";
 import { calcAxisStepSize, clampValue, cleanFloat, scaleValue, shiftColor, ValueScaler } from "../util";
 import TabRenderer from "./TabRenderer";
 
@@ -12,8 +21,11 @@ export default class LineGraphRenderer implements TabRenderer {
   private ROOT: HTMLElement;
   private CANVAS: HTMLCanvasElement;
   private SCROLL_OVERLAY: HTMLElement;
+  private HELP_OVERLAY: HTMLElement;
 
   private hasController: boolean;
+  private isFadingOut = false;
+  private zoomInAccumulator = 0;
   private scrollSensor: ScrollSensor;
   private lastRenderState = "";
   private mouseDownX = 0;
@@ -82,19 +94,60 @@ export default class LineGraphRenderer implements TabRenderer {
       window.selection.goIdle();
     });
 
+    this.HELP_OVERLAY = root.getElementsByClassName("line-graph-help")[0] as HTMLElement;
+
     // Scroll handling
-    this.scrollSensor = new ScrollSensor(this.SCROLL_OVERLAY, (dx: number, dy: number) => {
-      if (root.hidden) return;
-      window.selection.applyTimelineScroll(dx, dy, this.SCROLL_OVERLAY.clientWidth);
-    });
+    this.scrollSensor = new ScrollSensor(
+      this.SCROLL_OVERLAY,
+      (dx: number, dy: number, isPan: boolean, _cursorX: number, _cursorY: number) => {
+        if (root.hidden) return;
+        window.selection.applyTimelineScroll(dx, isPan ? 0 : dy, this.SCROLL_OVERLAY.clientWidth);
+
+        if (window.preferences && !window.preferences.hasScrolledLineGraph && !this.isFadingOut) {
+          if (dy < 0) {
+            this.zoomInAccumulator += dy;
+            if (this.zoomInAccumulator <= -200) {
+              this.isFadingOut = true;
+              this.HELP_OVERLAY.classList.add("fading-out");
+              setTimeout(() => {
+                window.sendMainMessage("update-preferences", { hasScrolledLineGraph: true });
+              }, 1000);
+            }
+          }
+        }
+      }
+    );
   }
 
   getAspectRatio(): number | null {
     return null;
   }
 
+  private getAxisValueText(value: number, units: Units.UnitConfig | null, filter: LineGraphFilter): string {
+    let valueClean = Math.abs(value) < this.MAX_DECIMAL_VALUE ? cleanFloat(value) : Math.round(value);
+    let output = valueClean.toString();
+    if (units !== null) {
+      let suffix = Units.getSuffixForFilter(units.suffix, filter);
+      output += suffix.length > 1 ? " " : "";
+      output += suffix;
+      if (filter === LineGraphFilter.None && units.pluralizeSuffix && value !== 1) output += "s";
+    }
+    return output;
+  }
+
   render(command: LineGraphRendererCommand): void {
     this.scrollSensor.periodic();
+
+    // Update help overlay
+    if (this.HELP_OVERLAY) {
+      const hasScrolled = window.preferences?.hasScrolledLineGraph ?? false;
+      this.HELP_OVERLAY.style.display = hasScrolled ? "none" : "flex";
+      if (hasScrolled) {
+        this.isFadingOut = false;
+        this.zoomInAccumulator = 0;
+        this.HELP_OVERLAY.classList.remove("fading-out");
+      }
+    }
 
     // Initial setup and scaling
     const timeRange = command.timeRange;
@@ -105,7 +158,37 @@ export default class LineGraphRenderer implements TabRenderer {
     let light = !window.matchMedia("(prefers-color-scheme: dark)").matches;
 
     // Exit if render state unchanged
-    let renderState: any[] = [width, height, light, devicePixelRatio, command, this.lastCursorX];
+    let renderState: any[] = [
+      width,
+      height,
+      light,
+      devicePixelRatio,
+      command.timeRange,
+      command.selectionMode,
+      command.selectedTime,
+      command.hoveredTime,
+      command.grabZoomRange,
+      command.leftRange,
+      command.rightRange,
+      command.showLeftAxis,
+      command.showRightAxis,
+      command.leftUnits,
+      command.rightUnits,
+      command.priorityAxis,
+      this.lastCursorX,
+      window.preferences?.timestamps,
+      command.displayOffset,
+      command.leftFields.map((field) => [field.values.length, field.color, field.type, field.size]),
+      command.discreteFields.map((field) => [
+        field.values.length,
+        field.color,
+        field.type,
+        field.toggleReference,
+        field.colorMap ? field.values : null // Specific values affect color-mapped fields so serialize full state
+      ]),
+      command.rightFields.map((field) => [field.values.length, field.color, field.type, field.size]),
+      command.alerts.map((row) => row.map((alert) => [alert.type, alert.text, alert.range]))
+    ];
     let renderStateString = JSON.stringify(renderState);
     if (renderStateString === this.lastRenderState) {
       return;
@@ -133,22 +216,43 @@ export default class LineGraphRenderer implements TabRenderer {
     let rightStepSize = calcAxisStepSize(command.rightRange, graphHeightOpen, this.Y_STEP_TARGET_PX);
 
     // Calculate horizontal layout
-    let getTextWidth = (range: [number, number], stepSize: number): number => {
+    let getTextWidth = (
+      range: [number, number],
+      stepSize: number,
+      units: Units.UnitConfig | null,
+      filter: LineGraphFilter
+    ): number => {
       let length = 0;
       let value = Math.floor(range[1] / stepSize) * stepSize;
       while (value > range[0]) {
-        length = Math.max(length, context.measureText(cleanFloat(value).toString()).width);
+        length = Math.max(length, context.measureText(this.getAxisValueText(value, units, filter)).width);
         value -= stepSize;
       }
       return Math.ceil(length / 10) * 10;
     };
-    let graphLeft = 25 + (command.showLeftAxis ? getTextWidth(command.leftRange, leftStepSize) : 0);
-    let graphRight = 25 + (command.showRightAxis ? getTextWidth(command.rightRange, rightStepSize) : 0);
+    let graphLeft =
+      25 +
+      (command.showLeftAxis ? getTextWidth(command.leftRange, leftStepSize, command.leftUnits, command.leftFilter) : 0);
+    let graphRight =
+      25 +
+      (command.showRightAxis
+        ? getTextWidth(command.rightRange, rightStepSize, command.rightUnits, command.rightFilter)
+        : 0);
     let graphWidth = width - graphLeft - graphRight;
     if (graphWidth < 1) graphWidth = 1;
 
     // Calculate X step size
-    let timeStepSize = calcAxisStepSize(command.timeRange, graphWidth, this.X_STEP_TARGET_PX);
+    let displayOffset = command.displayOffset;
+    let displayTimeRange: [number, number] = [
+      command.timeRange[0] + displayOffset,
+      command.timeRange[1] + displayOffset
+    ];
+    let maxTime = Math.max(Math.abs(displayTimeRange[0]), Math.abs(displayTimeRange[1]));
+    let intDigits = maxTime > 0 ? Math.log10(maxTime) + 1 : 1;
+    let timeSpan = displayTimeRange[1] - displayTimeRange[0];
+    let decDigits = timeSpan < 1 && timeSpan > 0 ? -Math.log10(timeSpan) : 0;
+    let extraDigits = Math.max(0, intDigits + decDigits - 3);
+    let timeStepSize = calcAxisStepSize(displayTimeRange, graphWidth, this.X_STEP_TARGET_PX + extraDigits * 12);
 
     // Update scroll layout
     this.SCROLL_OVERLAY.style.left = graphLeft.toString() + "px";
@@ -194,7 +298,15 @@ export default class LineGraphRenderer implements TabRenderer {
         // Draw shape
         toggle = !toggle;
         if (field.type === "stripes") {
-          context.fillStyle = toggle ? shiftColor(field.color, -30) : shiftColor(field.color, 30);
+          let baseColor =
+            field.colorMap && field.colorMap[field.values[i + skippedSamples]]
+              ? field.colorMap[field.values[i + skippedSamples]]
+              : field.color;
+          context.fillStyle = field.colorMap
+            ? baseColor
+            : toggle
+            ? shiftColor(baseColor, -30)
+            : shiftColor(baseColor, 30);
           context.fillRect(startX, topY, endX - startX, 15);
         } else {
           let startY = toggle ? topY + 15 : topY;
@@ -207,10 +319,18 @@ export default class LineGraphRenderer implements TabRenderer {
         // Draw text
         let adjustedStartX = startX < graphLeft ? graphLeft : startX;
         if (endX - adjustedStartX > 10) {
+          let baseColor =
+            field.colorMap && field.colorMap[field.values[i + skippedSamples]]
+              ? field.colorMap[field.values[i + skippedSamples]]
+              : field.color;
           if (field.type === "stripes") {
-            context.fillStyle = toggle ? shiftColor(field.color, 130) : shiftColor(field.color, -130);
+            context.fillStyle = field.colorMap
+              ? shiftColor(baseColor, light ? -130 : 130)
+              : toggle
+              ? shiftColor(baseColor, 130)
+              : shiftColor(baseColor, -130);
           } else {
-            context.fillStyle = field.color;
+            context.fillStyle = baseColor;
           }
           context.fillText(
             field.values[i + skippedSamples],
@@ -234,23 +354,29 @@ export default class LineGraphRenderer implements TabRenderer {
         let endX = scaleValue(alert.range[1], timeRange, [graphLeft, graphLeft + graphWidth]);
 
         // Draw shape
+        let baseColor = "#ffffff";
+        let textColor = "#000000";
         switch (alert.type) {
           case "error":
-            context.fillStyle = ensureThemeContrast("#ff0000");
+            baseColor = ensureThemeContrast("#ff0000");
+            textColor = "#ffeeee";
             break;
           case "warning":
-            context.fillStyle = ensureThemeContrast("#ffaa00");
+            baseColor = ensureThemeContrast("#ffaa00");
+            textColor = "#331100";
             break;
           case "info":
-            context.fillStyle = ensureThemeContrast("#00ff00");
+            baseColor = ensureThemeContrast("#0000ff");
+            textColor = "#eeeeff";
             break;
         }
+        context.fillStyle = baseColor;
         context.fillRect(startX, topY, endX - startX, 15);
 
         // Draw text
         let adjustedStartX = startX < graphLeft ? graphLeft : startX;
         if (endX - adjustedStartX > 10) {
-          context.fillStyle = "black";
+          context.fillStyle = textColor;
           context.fillText(alert.text, adjustedStartX + 5, topY + 15 / 2, endX - adjustedStartX - 10);
         }
       });
@@ -326,14 +452,17 @@ export default class LineGraphRenderer implements TabRenderer {
             break;
 
           case "points":
-            let radius = field.size === "normal" ? 1 : 2;
+            let deltaX = graphWidth / Math.max(1, field.timestamps.length - 1);
+            console.log(deltaX);
+            let radius = clampValue(Math.log(deltaX * 3.0), 1.0, 5.0);
+            context.beginPath();
             for (let i = 0; i < field.timestamps.length; i++) {
               let x = xScaler.calculate(field.timestamps[i]);
               let y = yScaler.calculate(field.values[i]);
-              context.beginPath();
+              context.moveTo(x + radius, y);
               context.arc(x, y, radius, 0, Math.PI * 2);
-              context.fill();
             }
+            context.fill();
             break;
         }
       });
@@ -387,9 +516,15 @@ export default class LineGraphRenderer implements TabRenderer {
     }
 
     // Use similar logic as main axes but with an extra decimal point of precision to format the popup timestamps
-    let formatMarkedTimestampText = (time: number): string => {
+    let isStartAt0 = window.preferences?.timestamps !== "original";
+    let formatMarkedTimestampText = (time: number, isDelta: boolean = false): string => {
+      let displayTime = isDelta ? time : time + displayOffset;
       let fractionDigits = Math.max(0, -Math.floor(Math.log10(timeStepSize / 10)));
-      return time.toFixed(fractionDigits) + "s";
+      let text = displayTime.toFixed(fractionDigits) + "s";
+      if (isStartAt0 && !isDelta) {
+        text = "+" + text;
+      }
+      return text;
     };
 
     // Write formatted timestamp popups to graph view
@@ -462,7 +597,7 @@ export default class LineGraphRenderer implements TabRenderer {
         hoveredX = hoveredX as number;
         hoveredText = hoveredText as string;
 
-        let deltaText = "\u0394" + formatMarkedTimestampText(command.hoveredTime - command.selectedTime);
+        let deltaText = "\u0394" + formatMarkedTimestampText(command.hoveredTime - command.selectedTime, true);
         let xSpace = clampValue(selectedX, graphLeft, graphLeft + graphWidth) - hoveredX;
         let textHalfWidths =
           (context.measureText(selectedText).width + 10) / 2 + (context.measureText(hoveredText).width + 10) / 2 + 4;
@@ -529,14 +664,14 @@ export default class LineGraphRenderer implements TabRenderer {
     if (command.showLeftAxis) {
       context.textAlign = "right";
       let stepPos = Math.floor(command.leftRange[1] / leftStepSize) * leftStepSize;
-      while (true) {
+      let iterCount = 0;
+      while (iterCount++ < 100) {
         let y = scaleValue(stepPos, command.leftRange, [graphTop + graphHeightOpen, graphTop]);
         if (y > graphTop + graphHeight) break;
 
         context.globalAlpha = 1;
         if (Math.abs(stepPos) < this.MAX_DECIMAL_VALUE || stepPos % 1 === 0) {
-          let value = Math.abs(stepPos) < this.MAX_DECIMAL_VALUE ? cleanFloat(stepPos) : Math.round(stepPos);
-          context.fillText(value.toString(), graphLeft - 15, y);
+          context.fillText(this.getAxisValueText(stepPos, command.leftUnits, command.leftFilter), graphLeft - 15, y);
           context.beginPath();
           context.moveTo(graphLeft, y);
           context.lineTo(graphLeft - 5, y);
@@ -558,14 +693,18 @@ export default class LineGraphRenderer implements TabRenderer {
     if (command.showRightAxis) {
       context.textAlign = "left";
       let stepPos = Math.floor(command.rightRange[1] / rightStepSize) * rightStepSize;
-      while (true) {
+      let iterCount = 0;
+      while (iterCount++ < 100) {
         let y = scaleValue(stepPos, command.rightRange, [graphTop + graphHeightOpen, graphTop]);
         if (y > graphTop + graphHeight) break;
 
         context.globalAlpha = 1;
         if (Math.abs(stepPos) < this.MAX_DECIMAL_VALUE || stepPos % 1 === 0) {
-          let value = Math.abs(stepPos) < this.MAX_DECIMAL_VALUE ? cleanFloat(stepPos) : Math.round(stepPos);
-          context.fillText(value.toString(), graphLeft + graphWidth + 15, y);
+          context.fillText(
+            this.getAxisValueText(stepPos, command.rightUnits, command.rightFilter),
+            graphLeft + graphWidth + 15,
+            y
+          );
           context.beginPath();
           context.moveTo(graphLeft + graphWidth, y);
           context.lineTo(graphLeft + graphWidth + 5, y);
@@ -586,9 +725,10 @@ export default class LineGraphRenderer implements TabRenderer {
 
     // Render x axis
     context.textAlign = "center";
-    let stepPos = Math.ceil(cleanFloat(timeRange[0] / timeStepSize)) * timeStepSize;
-    while (true) {
-      let x = scaleValue(stepPos, timeRange, [graphLeft, graphLeft + graphWidth]);
+    let stepPos = Math.ceil(cleanFloat(displayTimeRange[0] / timeStepSize)) * timeStepSize;
+    let iterCount = 0;
+    while (iterCount++ < 100) {
+      let x = scaleValue(stepPos, displayTimeRange, [graphLeft, graphLeft + graphWidth]);
 
       // Clean up final x (scroll can cause rounding problems)
       if (x - graphLeft - graphWidth > 1) {
@@ -598,6 +738,9 @@ export default class LineGraphRenderer implements TabRenderer {
       }
 
       let text = cleanFloat(stepPos).toString() + "s";
+      if (isStartAt0) {
+        text = "+" + text;
+      }
 
       context.globalAlpha = 1;
       context.fillText(text, x, graphTop + graphHeight + 15);
@@ -625,6 +768,7 @@ export default class LineGraphRenderer implements TabRenderer {
 
 export type LineGraphRendererCommand = {
   timeRange: [number, number];
+  displayOffset: number;
   selectionMode: SelectionMode;
   selectedTime: number | null;
   hoveredTime: number | null;
@@ -634,6 +778,10 @@ export type LineGraphRendererCommand = {
   rightRange: [number, number];
   showLeftAxis: boolean;
   showRightAxis: boolean;
+  leftUnits: Units.UnitConfig | null;
+  rightUnits: Units.UnitConfig | null;
+  leftFilter: LineGraphFilter;
+  rightFilter: LineGraphFilter;
   priorityAxis: "left" | "right";
   leftFields: LineGraphRendererCommand_NumericField[];
   rightFields: LineGraphRendererCommand_NumericField[];
@@ -653,6 +801,7 @@ export type LineGraphRendererCommand_DiscreteField = {
   timestamps: number[];
   values: string[];
   color: string;
+  colorMap?: { [key: string]: string };
   type: "stripes" | "graph";
   toggleReference: boolean;
 };

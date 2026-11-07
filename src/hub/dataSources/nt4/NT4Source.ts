@@ -1,19 +1,36 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
+import { IS_LITE } from "../../../shared/buildConstants";
 import Log from "../../../shared/log/Log";
-import { PHOTON_PREFIX, PROTO_PREFIX, STRUCT_PREFIX, getEnabledKey, getURCLKeys } from "../../../shared/log/LogUtil";
+import { PHOTON_PREFIX, PROTO_PREFIX, STRUCT_PREFIX, getStructuredTypeFromRaw } from "../../../shared/log/LogKeyUtils";
+import { getURCLKeys } from "../../../shared/log/LogUtil";
 import LoggableType from "../../../shared/log/LoggableType";
-import ProtoDecoder from "../../../shared/log/ProtoDecoder";
+import { AUTONOMOUS_KEYS, ENABLED_KEYS, UTILITY_KEYS } from "../../../shared/log/RobotState";
 import { checkArrayType } from "../../../shared/util";
 import { LiveDataSource, LiveDataSourceStatus } from "../LiveDataSource";
 import CustomSchemas from "../schema/CustomSchemas";
-import { NT4_Client, NT4_Topic } from "./NT4";
+import { NT4_Client, NT4_PORTS_DEFAULT, NT4_PORTS_DS, NT4_PORTS_SYSTEMCORE, NT4_Topic } from "./NT4";
 import NT4Tuner from "./NT4Tuner";
 
 export const WPILOG_PREFIX = "NT:";
+export const DS_PREFIX = "DS:";
 export const AKIT_PREFIX = "/AdvantageKit";
 export const AKIT_TUNING_PREFIX = "/Tuning";
 
+export enum NT4Mode {
+  Default,
+  AdvantageKit,
+  Systemcore,
+  DriverStation
+}
+
 export default class NT4Source extends LiveDataSource {
-  private akitMode: boolean;
+  private mode: NT4Mode;
   private client: NT4_Client | null = null;
 
   private shouldRunOutputCallback = false;
@@ -24,15 +41,23 @@ export default class NT4Source extends LiveDataSource {
   private lowBandwidthTopicSubscription: number | null = null;
   private lowBandwidthDataSubscriptions: { [id: string]: number } = {};
 
-  constructor(akitMode: boolean) {
+  constructor(mode: NT4Mode) {
     super();
-    this.akitMode = akitMode;
+    this.mode = mode;
 
-    let periodic = () => {
-      this.periodic();
+    if (window.requestIdleCallback !== undefined) {
+      let periodic = () => {
+        this.periodic();
+        window.requestIdleCallback(periodic, { timeout: 100 });
+      };
       window.requestIdleCallback(periodic, { timeout: 100 });
-    };
-    window.requestIdleCallback(periodic, { timeout: 100 });
+    } else {
+      let periodic = () => {
+        this.periodic();
+        window.requestAnimationFrame(periodic);
+      };
+      window.requestAnimationFrame(periodic);
+    }
   }
 
   private periodic() {
@@ -56,7 +81,7 @@ export default class NT4Source extends LiveDataSource {
         }
         if (this.loggingSubscription === null) {
           this.loggingSubscription = this.client.subscribe(
-            this.akitMode ? [AKIT_PREFIX + "/", AKIT_TUNING_PREFIX + "/"] : [""],
+            this.mode === NT4Mode.AdvantageKit ? [AKIT_PREFIX + "/", AKIT_TUNING_PREFIX + "/"] : [""],
             true,
             true,
             0.02
@@ -70,7 +95,7 @@ export default class NT4Source extends LiveDataSource {
         }
         if (this.lowBandwidthTopicSubscription === null) {
           this.lowBandwidthTopicSubscription = this.client.subscribeTopicsOnly(
-            this.akitMode ? [AKIT_PREFIX + "/", AKIT_TUNING_PREFIX + "/"] : [""],
+            this.mode === NT4Mode.AdvantageKit ? [AKIT_PREFIX + "/", AKIT_TUNING_PREFIX + "/"] : [""],
             true
           );
         }
@@ -79,16 +104,27 @@ export default class NT4Source extends LiveDataSource {
         let activeFields: Set<string> = new Set();
         if (window.log === this.log) {
           let announcedKeys = this.log.getFieldKeys().filter((key) => this.log?.getType(key) !== LoggableType.Empty);
-          let enabledKey = getEnabledKey(this.log);
+          let initialKeys: string[];
+          switch (this.mode) {
+            case NT4Mode.AdvantageKit:
+              initialKeys = ["/.schema", "/Timestamp"];
+              break;
+            case NT4Mode.DriverStation:
+              initialKeys = [DS_PREFIX + "/.schema"];
+              break;
+            default:
+              initialKeys = [
+                WPILOG_PREFIX + "/.schema",
+                WPILOG_PREFIX + AKIT_PREFIX + "/.schema",
+                WPILOG_PREFIX + AKIT_PREFIX + "/Timestamp"
+              ];
+              break;
+          }
           [
-            ...(this.akitMode
-              ? ["/.schema", "/Timestamp"]
-              : [
-                  WPILOG_PREFIX + "/.schema",
-                  WPILOG_PREFIX + AKIT_PREFIX + "/.schema",
-                  WPILOG_PREFIX + AKIT_PREFIX + "/Timestamp"
-                ]),
-            ...(enabledKey === undefined ? [] : [enabledKey]),
+            ...initialKeys,
+            ...ENABLED_KEYS,
+            ...AUTONOMOUS_KEYS,
+            ...UTILITY_KEYS,
             ...window.tabs.getActiveFields(),
             ...window.sidebar.getActiveFields(),
             ...getURCLKeys(window.log)
@@ -102,14 +138,14 @@ export default class NT4Source extends LiveDataSource {
                 subscribeKey = announcedKey;
               }
               if (subscribeKey !== null) {
-                if (this.akitMode) {
+                if (this.mode === NT4Mode.AdvantageKit) {
                   if (subscribeKey.startsWith(AKIT_TUNING_PREFIX)) {
                     activeFields.add(subscribeKey);
                   } else {
                     activeFields.add(AKIT_PREFIX + subscribeKey);
                   }
                 } else {
-                  activeFields.add(subscribeKey.slice(WPILOG_PREFIX.length));
+                  activeFields.add(subscribeKey.slice(this.getLogPrefix().length));
                 }
               }
             });
@@ -179,37 +215,51 @@ export default class NT4Source extends LiveDataSource {
       this.setStatus(LiveDataSourceStatus.Error);
     } else {
       this.log = new Log();
+      let ports: number[];
+      switch (this.mode) {
+        case NT4Mode.Systemcore:
+          ports = NT4_PORTS_SYSTEMCORE;
+          break;
+        case NT4Mode.DriverStation:
+          ports = NT4_PORTS_DS;
+          break;
+        default:
+          ports = NT4_PORTS_DEFAULT;
+          break;
+      }
       this.client = new NT4_Client(
         address,
-        "AdvantageScope",
+        ports,
+        IS_LITE ? "AdvantageScopeLite" : "AdvantageScope",
         (topic: NT4_Topic) => {
           // Announce
           if (!this.log) return;
           if (this.noFieldsTimeout) clearTimeout(this.noFieldsTimeout);
           if (topic.name === "") return;
           let modifiedKey = this.getKeyFromTopic(topic);
-          let structuredType: string | null = null;
-          if (topic.type.startsWith(STRUCT_PREFIX)) {
-            structuredType = topic.type.split(STRUCT_PREFIX)[1];
-            if (structuredType.endsWith("[]")) {
-              structuredType = structuredType.slice(0, -2);
-            }
-          } else if (topic.type.startsWith(PROTO_PREFIX)) {
-            structuredType = ProtoDecoder.getFriendlySchemaType(topic.type.split(PROTO_PREFIX)[1]);
-          } else if (topic.type.startsWith(PHOTON_PREFIX)) {
-            structuredType = topic.type.split(PHOTON_PREFIX)[1];
-          } else if (topic.type === "msgpack") {
-            structuredType = "MessagePack";
-          } else if (topic.type === "json") {
-            structuredType = "JSON";
-          }
+          let structuredType = getStructuredTypeFromRaw(topic.type);
           this.log.createBlankField(modifiedKey, this.getLogType(topic.type));
           this.log.setWpilibType(modifiedKey, topic.type);
           this.log.setStructuredType(modifiedKey, structuredType);
+          this.log.setMetadataString(
+            modifiedKey,
+            Object.keys(topic.properties).length > 0 ? JSON.stringify(topic.properties) : ""
+          );
           this.shouldRunOutputCallback = true;
         },
         (topic: NT4_Topic) => {
           // Unannounce
+        },
+        (topic: NT4_Topic) => {
+          // Properties
+          if (!this.log) return;
+          if (topic.name === "") return;
+          let modifiedKey = this.getKeyFromTopic(topic);
+          this.log.setMetadataString(
+            modifiedKey,
+            Object.keys(topic.properties).length > 0 ? JSON.stringify(topic.properties) : ""
+          );
+          this.shouldRunOutputCallback = true;
         },
         (topic: NT4_Topic, timestamp_us: number, value: unknown) => {
           // Data
@@ -332,7 +382,7 @@ export default class NT4Source extends LiveDataSource {
           if (!this.connectTime && this.client !== null) {
             this.connectTime = this.client.getClientTime_us();
           }
-          if (this.akitMode) {
+          if (this.mode === NT4Mode.AdvantageKit) {
             this.noFieldsTimeout = setTimeout(() => {
               window.sendMainMessage("error", {
                 title: "Problem with NT4 connection",
@@ -366,20 +416,24 @@ export default class NT4Source extends LiveDataSource {
     if (this.client === null || this.log === null) {
       throw "Cannot create NT4 tuner before starting connection";
     } else {
-      return new NT4Tuner(this.client, this.akitMode);
+      return new NT4Tuner(this.client, this.mode);
     }
+  }
+
+  private getLogPrefix(): string {
+    return this.mode === NT4Mode.DriverStation ? DS_PREFIX : WPILOG_PREFIX;
   }
 
   /** Gets the name of the topic, depending on whether we're running in AdvantageKit mode. */
   private getKeyFromTopic(topic: NT4_Topic): string {
-    if (this.akitMode) {
+    if (this.mode === NT4Mode.AdvantageKit) {
       if (topic.name.startsWith(AKIT_PREFIX)) {
         return topic.name.slice(AKIT_PREFIX.length);
       } else {
         return topic.name;
       }
     } else {
-      return WPILOG_PREFIX + topic.name;
+      return this.getLogPrefix() + topic.name;
     }
   }
 

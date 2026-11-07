@@ -1,3 +1,12 @@
+/*
+  Copyright (c) 2021-2026 Littleton Robotics
+  http://github.com/Mechanical-Advantage
+
+  Use of this source code is governed by a BSD
+  license that can be found in the LICENSE file
+  at the root directory of this project.
+*/
+
 /* Documentation */
 
 div.documentation-container {
@@ -36,6 +45,7 @@ div.line-graph-scroll {
   top: 8px;
   bottom: 35px;
   overflow: scroll;
+  scrollbar-width: none; /* Required for Firefox */
 }
 
 div.line-graph-scroll::-webkit-scrollbar {
@@ -47,26 +57,74 @@ div.line-graph-scroll-content {
   height: 1000000px;
 }
 
-/* Odometry */
-
-div.odometry-canvas-container {
+div.line-graph-help {
   position: absolute;
-  top: 0%;
-  left: 0%;
-  width: 100%;
-  height: 100%;
+  z-index: 10;
+  left: 0px;
+  right: 0px;
+  top: 8px;
+  bottom: 35px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
 }
 
-canvas.odometry-canvas {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+div.line-graph-help-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  opacity: 0.45;
+  transition: opacity 0.4s ease-out;
+  animation: help-fade-in 0.4s ease-out;
 }
 
-/* 3D Field */
+div.line-graph-help.fading-out div.line-graph-help-container {
+  opacity: 0;
+}
 
-div.three-dimension-canvas-container {
+div.line-graph-help-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: #000;
+}
+
+@media (prefers-color-scheme: dark) {
+  div.line-graph-help-row {
+    color: #fff;
+  }
+}
+
+img.line-graph-help-icon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+@media (prefers-color-scheme: dark) {
+  img.line-graph-help-icon {
+    filter: invert(1);
+  }
+}
+
+@keyframes help-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.45;
+  }
+}
+
+/* 2D Field */
+
+div.field-2d-canvas-container {
   position: absolute;
   bottom: 0%;
   left: 0%;
@@ -75,31 +133,64 @@ div.three-dimension-canvas-container {
   overflow: hidden;
 }
 
-body.satellite div.three-dimension-canvas-container {
+body.satellite div.field-2d-canvas-container {
   height: 100%;
 }
 
-div.three-dimension-canvas-container.fixed {
+canvas.field-2d-canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+div.field-2d-scroll {
+  position: absolute;
+  left: 0px;
+  right: 0px;
+  bottom: 0px;
+  height: calc(100% + 26px);
+  overflow: scroll;
+  scrollbar-width: none; /* Required for Firefox */
+}
+
+body.satellite div.field-2d-scroll {
+  height: 100%;
+}
+
+div.field-2d-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+div.field-2d-scroll-content {
+  width: 1000000px;
+  height: 1000000px;
+}
+
+/* 3D Field */
+
+div.field-3d-canvas-container {
+  position: absolute;
+  bottom: 0%;
+  left: 0%;
+  width: 100%;
+  height: calc(100% + 26px);
+  overflow: hidden;
+}
+
+body.satellite div.field-3d-canvas-container {
+  height: 100%;
+}
+
+div.field-3d-canvas-container.fixed {
   height: calc(100% + 10px);
 }
 
-body.satellite div.three-dimension-canvas-container.fixed {
+body.satellite div.field-3d-canvas-container.fixed {
   height: 100%;
 }
 
-div.three-dimension-annotations {
-  pointer-events: none;
-}
-
-div.three-dimension-annotations > div {
-  text-align: center;
-  font-weight: bold;
-  color: #ffffff;
-  text-shadow: 0px 0px 10px black;
-}
-
-canvas.three-dimension-canvas:not(.fixed),
-div.three-dimension-annotations:not(.fixed) {
+canvas.field-3d-canvas:not(.fixed) {
   position: absolute;
   left: 0%;
   top: 0%;
@@ -107,19 +198,18 @@ div.three-dimension-annotations:not(.fixed) {
   height: 100%;
 }
 
-canvas.three-dimension-canvas.fixed,
-div.three-dimension-annotations.fixed {
+canvas.field-3d-canvas.fixed {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
 }
 
-canvas.three-dimension-canvas.fixed {
+canvas.field-3d-canvas.fixed {
   border: 1px solid #555;
 }
 
-div.three-dimension-alert {
+div.field-3d-alert {
   position: absolute;
   left: 50%;
   top: 20px;
@@ -131,11 +221,11 @@ div.three-dimension-alert {
 }
 
 @media (prefers-color-scheme: dark) {
-  canvas.three-dimension-canvas.fixed {
+  canvas.field-3d-canvas.fixed {
     border: 1px solid #999;
   }
 
-  div.three-dimension-alert {
+  div.field-3d-alert {
     background-color: #222;
     border: 1px solid #999;
   }
@@ -337,6 +427,7 @@ table.data-table th:last-child {
 
 table.data-table td {
   height: 16px;
+  line-height: 16px;
   padding: 4px;
   font-family: Courier, monospace;
   user-select: text;
@@ -543,7 +634,7 @@ table.console-table th:not(:first-child) input::-webkit-search-cancel-button {
   -webkit-appearance: none;
   height: 1em;
   width: 1em;
-  background: url("symbols/xmark.circle.fill.svg") no-repeat 50% 50%;
+  background: url("symbols/cancel.svg") no-repeat 50% 50%;
   background-size: contain;
 }
 

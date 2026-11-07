@@ -1,0 +1,42 @@
+{
+  "ignore": [
+    "**/!(*.js|*.mjs|*.ts|*.tsx|*.swift|*.html|*.css|*.c|*.h|*.metal|*.py)",
+    "bundles",
+    "docs/build",
+    "docs/.docusaurus",
+    "runOwletDownload.js",
+    "src/hub/dataSources/schema/spark/*",
+    "src/hub/dataSources/ftcdashboard/configReducer.ts",
+    "src/hub/dataSources/ftcdashboard/configTypes.ts"
+  ],
+  "license": "file-header.txt",
+  "licenseFormats": {
+    "js|ts|mjs|tsx|swift|c|h|metal": {
+      "append": "",
+      "eachLine": {
+        "prepend": "// "
+      }
+    },
+    "html": {
+      "prepend": "<!--",
+      "append": "-->\n",
+      "eachLine": {
+        "prepend": "  "
+      }
+    },
+    "css": {
+      "prepend": "/*",
+      "append": "*/\n",
+      "eachLine": {
+        "prepend": "  "
+      }
+    },
+    "python": {
+      "append": "",
+      "eachLine": {
+        "prepend": "# "
+      }
+    }
+  },
+  "trailingWhitespace": "TRIM"
+}

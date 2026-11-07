@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import protobuf from "protobufjs";
 import descriptor from "protobufjs/ext/descriptor";
 
@@ -21,25 +28,21 @@ export default class ProtoDecoder {
     }
     if (fileDescriptor.messageType) {
       for (let i = 0; i < fileDescriptor.messageType.length; i++) {
-        // @ts-expect-error
         filePackage.add(protobuf.Type.fromDescriptor(fileDescriptor.messageType[i], fileDescriptor.syntax));
       }
     }
     if (fileDescriptor.enumType) {
       for (let i = 0; i < fileDescriptor.enumType.length; i++) {
-        // @ts-expect-error
         filePackage.add(protobuf.Enum.fromDescriptor(fileDescriptor.enumType[i]));
       }
     }
     if (fileDescriptor.extension) {
       for (let i = 0; i < fileDescriptor.extension.length; i++) {
-        // @ts-expect-error
         filePackage.add(protobuf.Field.fromDescriptor(fileDescriptor.extension[i]));
       }
     }
     if (fileDescriptor.service) {
       for (let i = 0; i < fileDescriptor.service.length; i++) {
-        // @ts-expect-error
         filePackage.add(protobuf.Service.fromDescriptor(fileDescriptor.service[i]));
       }
     }
@@ -77,7 +80,7 @@ export default class ProtoDecoder {
       findSchemaTypes(decodedData[key], key);
     });
     return {
-      data: decodedData.toJSON(),
+      data: type.toObject(decodedData, { defaults: true }),
       schemaTypes: schemaTypes
     };
   }

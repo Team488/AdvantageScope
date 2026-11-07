@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import Log from "../../../shared/log/Log";
 import { HistoricalDataSource_WorkerRequest, HistoricalDataSource_WorkerResponse } from "../HistoricalDataSource";
 import RLOGDecoder from "./RLOGDecoder";
@@ -6,7 +13,7 @@ function sendResponse(response: HistoricalDataSource_WorkerResponse) {
   self.postMessage(response);
 }
 
-self.onmessage = async (event) => {
+self.onmessage = (event) => {
   let request: HistoricalDataSource_WorkerRequest = event.data;
   if (request.type !== "start") return;
 

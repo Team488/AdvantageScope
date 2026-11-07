@@ -1,4 +1,10 @@
-import { getRobotStateRanges } from "../shared/log/LogUtil";
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+import { getRobotStateRanges } from "../shared/log/RobotState";
 import { calcAxisStepSize, clampValue, cleanFloat, scaleValue } from "../shared/util";
 import ScrollSensor from "./ScrollSensor";
 
@@ -15,6 +21,8 @@ export default class Timeline {
   private grabZoomStartTime = 0;
   private lastCursorX: number | null = null;
   private lastCursorInRect = false;
+  private scrollTime: number | null = null;
+  private zoomInAccumulator = 0;
 
   constructor(container: HTMLElement) {
     this.CONTAINER = container;
@@ -79,6 +87,19 @@ export default class Timeline {
     this.scrollSensor = new ScrollSensor(this.SCROLL_OVERLAY, (dx: number, dy: number) => {
       if (this.isHidden()) return;
       window.selection.applyTimelineScroll(dx, dy, this.SCROLL_OVERLAY.clientWidth);
+
+      // Handle help overlay scrolling
+      if (window.preferences && !window.preferences.hasScrolledTimeline && this.scrollTime === null) {
+        if (dy < 0) {
+          this.zoomInAccumulator += dy;
+          if (this.zoomInAccumulator <= -200) {
+            this.scrollTime = Date.now();
+            setTimeout(() => {
+              window.sendMainMessage("update-preferences", { hasScrolledTimeline: true });
+            }, 1000);
+          }
+        }
+      }
     });
   }
 
@@ -101,10 +122,18 @@ export default class Timeline {
     this.CANVAS.height = height * devicePixelRatio;
     context.scale(devicePixelRatio, devicePixelRatio);
     context.clearRect(0, 0, width, height);
-    context.font = "200 12px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont";
+    let helpFont = "200 14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont";
+    let labelFont = "200 12px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont";
 
     // Calculate step size
-    let stepSize = calcAxisStepSize(timeRange, width, this.STEP_TARGET_PX);
+    let displayOffset = window.log.getTimestampDisplayOffset();
+    let displayTimeRange: [number, number] = [timeRange[0] + displayOffset, timeRange[1] + displayOffset];
+    let maxTime = Math.max(Math.abs(displayTimeRange[0]), Math.abs(displayTimeRange[1]));
+    let intDigits = maxTime > 0 ? Math.log10(maxTime) + 1 : 1;
+    let timeSpan = displayTimeRange[1] - displayTimeRange[0];
+    let decDigits = timeSpan < 1 && timeSpan > 0 ? -Math.log10(timeSpan) : 0;
+    let extraDigits = Math.max(0, intDigits + decDigits - 3);
+    let stepSize = calcAxisStepSize(displayTimeRange, width, this.STEP_TARGET_PX + extraDigits * 12);
 
     // Draw state ranges
     context.lineWidth = 1;
@@ -115,10 +144,16 @@ export default class Timeline {
       let endTime = range.end === undefined ? timeRange[1] : range.end;
       let isAuto = range.mode === "auto";
 
-      if (isAuto) {
-        context.fillStyle = light ? "#00cc00" : "#00bb00";
-      } else {
-        context.fillStyle = light ? "#00aaff" : "#0000bb";
+      switch (range.mode) {
+        case "teleop":
+          context.fillStyle = light ? "#5a83ff" : "#3957dd";
+          break;
+        case "auto":
+          context.fillStyle = light ? "#efab28" : "#c38615";
+          break;
+        case "utility":
+          context.fillStyle = light ? "#888888" : "#777777";
+          break;
       }
       let startX = clampValue(scaleValue(startTime, timeRange, [0, width]), 0, width);
       let endX = clampValue(scaleValue(endTime, timeRange, [0, width]), 0, width);
@@ -198,30 +233,80 @@ export default class Timeline {
     if (selectedTime !== null) markTime(selectedTime, 1);
 
     // Draw tick marks
+    let helpText = "Scroll timeline to zoom";
+    context.font = helpFont;
+    let helpTextWidth = context.measureText(helpText).width;
+
+    // Reset scrollTime once preference is set
+    let hasScrolledTimeline = window.preferences?.hasScrolledTimeline ?? false;
+    if (hasScrolledTimeline) {
+      this.scrollTime = null;
+      this.zoomInAccumulator = 0;
+    }
+
+    // Calculate opacity of help text
+    let helpTextOpacity = 0.5;
+    if (hasScrolledTimeline) {
+      helpTextOpacity = 0;
+    } else if (this.scrollTime !== null) {
+      let elapsed = Date.now() - this.scrollTime;
+      if (elapsed < 600) {
+        helpTextOpacity = 0.5;
+      } else if (elapsed < 1000) {
+        helpTextOpacity = 0.5 * (1 - (elapsed - 600) / 400);
+      } else {
+        helpTextOpacity = 0;
+      }
+    }
+
     context.lineWidth = 0.5;
     context.strokeStyle = light ? "#222" : "#eee";
     context.fillStyle = light ? "#222" : "#eee";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.globalAlpha = 0.5;
-    let stepPos = Math.ceil(cleanFloat(timeRange[0] / stepSize)) * stepSize;
-    while (true) {
-      let x = scaleValue(stepPos, timeRange, [0, width]);
+    let isStartAt0 = window.preferences?.timestamps !== "original";
+    let stepPos = Math.ceil(cleanFloat(displayTimeRange[0] / stepSize)) * stepSize;
+    let iterCount = 0;
+    while (iterCount++ < 100) {
+      let x = scaleValue(stepPos, displayTimeRange, [0, width]);
       if (x > width + 1) {
         break;
       }
 
       let text = cleanFloat(stepPos).toString() + "s";
+      if (isStartAt0) {
+        text = "+" + text;
+      }
+      context.font = labelFont;
       let textWidth = context.measureText(text).width;
       let textX = clampValue(x, textWidth / 2 + 3, width - textWidth / 2 - 3);
       let textXRange = [textX - textWidth / 2, textX + textWidth / 2];
+
       let markDistance = markedXs.reduce((min, x) => {
         let dist = 0;
         if (x < textXRange[0]) dist = textXRange[0] - x;
         if (x > textXRange[1]) dist = x - textXRange[1];
         return dist < min ? dist : min;
       }, Infinity);
-      context.globalAlpha = clampValue(scaleValue(markDistance, [0, 20], [0.2, 0.5]), 0, 1);
+
+      let helpLeft = width / 2 - helpTextWidth / 2;
+      let helpRight = width / 2 + helpTextWidth / 2;
+      let helpDistance = Infinity;
+      if (helpRight < textXRange[0]) helpDistance = textXRange[0] - helpRight;
+      else if (helpLeft > textXRange[1]) helpDistance = helpLeft - textXRange[1];
+      else helpDistance = 0;
+
+      // Adjust min distance based on help text opacity.
+      let adjustedHelpDistance = helpDistance;
+      if (helpTextOpacity === 0) {
+        adjustedHelpDistance = Infinity;
+      } else {
+        let opacityRatio = helpTextOpacity / 0.5;
+        adjustedHelpDistance = helpDistance / opacityRatio;
+      }
+
+      let minDistance = Math.min(markDistance, adjustedHelpDistance);
+      context.globalAlpha = clampValue(scaleValue(minDistance, [0, 20], [0.2, 0.5]), 0, 1);
       context.fillText(text, textX, height / 2);
 
       context.beginPath();
@@ -230,9 +315,18 @@ export default class Timeline {
       context.moveTo(x, height - 8);
       context.lineTo(x, height);
       context.stroke();
-      context.globalAlpha = 0.5;
 
       stepPos += stepSize;
+    }
+
+    // Draw help text in center
+    if (helpTextOpacity > 0) {
+      context.font = helpFont;
+      context.fillStyle = light ? "#222" : "#eee";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.globalAlpha = helpTextOpacity;
+      context.fillText(helpText, width / 2, height / 2);
     }
     context.globalAlpha = 1;
   }

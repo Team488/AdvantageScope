@@ -1,6 +1,13 @@
-import { USB_ADDRESS } from "./shared/IPAddresses";
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
+import { IS_LITE } from "./shared/buildConstants";
 import NamedMessage from "./shared/NamedMessage";
-import Preferences from "./shared/Preferences";
+import Preferences, { getRobotAddress } from "./shared/Preferences";
 import { zfill } from "./shared/util";
 
 const FILE_LIST: HTMLElement = document.getElementsByClassName("file-list")[0] as HTMLElement;
@@ -19,7 +26,7 @@ let messagePort: MessagePort | null = null;
 let platform: string = "";
 let preferences: Preferences | null = null;
 
-let address: string = "";
+let address: string = IS_LITE ? window.location.hostname : "";
 let loading = true;
 let startTime: number | null = null;
 let alertIsError = false;
@@ -36,7 +43,7 @@ function sendMainMessage(name: string, data?: any) {
 }
 
 window.addEventListener("message", (event) => {
-  if (event.source === window && event.data === "port") {
+  if (event.data === "port") {
     messagePort = event.ports[0];
     messagePort.onmessage = (event) => {
       let message: NamedMessage = event.data;
@@ -55,13 +62,14 @@ function handleMainMessage(message: NamedMessage) {
       preferences = message.data;
       let path = "";
       if (preferences) {
-        address = preferences.usb ? USB_ADDRESS : preferences.rioAddress;
-        // https://github.com/Mechanical-Advantage/AdvantageScope/issues/167
-        address = address
-          .split(".")
-          .map((part) => part.replace(/^0+/, "") || "0")
-          .join(".");
-        path = preferences.rioPath;
+        if (!IS_LITE) {
+          // https://github.com/Mechanical-Advantage/AdvantageScope/issues/167
+          address = getRobotAddress(preferences, platform)
+            .split(".")
+            .map((part) => part.replace(/^0+/, "") || "0")
+            .join(".");
+        }
+        path = preferences.remotePath;
       }
       sendMainMessage("start", {
         address: address,
@@ -97,15 +105,15 @@ function handleMainMessage(message: NamedMessage) {
       console.warn(message.data);
       let friendlyText = "";
       if (message.data === "No such file") {
-        friendlyText = "Failed to open log folder at <u>" + preferences?.rioPath + "</u>";
-      } else if (message.data === "Timed out while waiting for handshake") {
-        friendlyText = "roboRIO not found at <u>" + address + "</u> (check connection)";
+        friendlyText = "Failed to open log folder at <u>" + preferences?.remotePath + "</u>";
+      } else if (message.data === "Timed out while waiting for handshake" || message.data === "Fetch failed") {
+        friendlyText = "Robot not found at <u>" + address + "</u> (check connection)";
       } else if (message.data.includes("ENOTFOUND")) {
         friendlyText = "Unknown address <u>" + address + "</u>";
       } else if (message.data === "All configured authentication methods failed") {
-        friendlyText = "Failed to authenticate to roboRIO at <u>" + address + "</u>";
+        friendlyText = "Failed to authenticate to robot at <u>" + address + "</u>";
       } else if (message.data === "Not connected") {
-        friendlyText = "Lost connection to roboRIO";
+        friendlyText = "Lost connection to robot";
       } else {
         friendlyText = "Unknown error: " + message.data;
       }
@@ -143,7 +151,7 @@ function handleMainMessage(message: NamedMessage) {
 
         let detailsText =
           Math.floor(currentSize / 1e6).toString() + "MB / " + Math.floor(totalSize / 1e6).toString() + "MB";
-        if (new Date().getTime() / 1000 - startTime > 0.5) {
+        if (new Date().getTime() / 1000 - startTime > 0.5 && currentSize > 1e6) {
           // Wait to establish speed
           let speed = Math.round((currentSize / (new Date().getTime() / 1000 - startTime) / 1e6) * 8);
           let remainingSeconds = Math.floor(
@@ -181,8 +189,24 @@ function handleMainMessage(message: NamedMessage) {
         FILE_LIST_ITEMS.removeChild(FILE_LIST_ITEMS.firstChild);
       }
 
+      // Get and sort filenames
+      let fileData: { name: string; size: number; isFolder: boolean }[] = message.data;
+      let isRandomized = (name: string): boolean =>
+        name.includes("TBD") || // WPILib DataLogManager
+        ((name.startsWith("Log_") || name.startsWith("akit_")) && !name.includes("-")); // AdvantageKit
+      fileData.sort((a, b) => {
+        let aRandomized = isRandomized(a.name);
+        let bRandomized = isRandomized(b.name);
+        if (aRandomized && !bRandomized) {
+          return 1;
+        } else if (!aRandomized && bRandomized) {
+          return -1;
+        } else {
+          return -a.name.localeCompare(b.name);
+        }
+      });
+
       // Add new list items
-      let fileData: { name: string; size: number; randomized: boolean }[] = message.data;
       filenames = fileData.map((file) => file.name);
       fileData.forEach((file, index) => {
         let item = document.createElement("div");
@@ -223,17 +247,26 @@ function handleMainMessage(message: NamedMessage) {
 
         let img = document.createElement("img");
         item.appendChild(img);
-        let filenameComponents = file.name.split(".");
-        let extension = filenameComponents[filenameComponents.length - 1];
-        switch (platform) {
-          case "darwin":
-            img.src = "../icons/download/" + extension + "-icon-mac.png";
-            img.classList.add("mac");
-            break;
-          case "linux":
-          case "win32":
-            img.src = "../icons/download/" + extension + "-icon-linuxwin.png";
-            break;
+        if (file.isFolder) {
+          img.src = "../icons/download/folder-icon.png";
+          img.classList.add("folder");
+        } else {
+          let filenameComponents = file.name.split(".");
+          let extension = filenameComponents[filenameComponents.length - 1];
+          if (extension === "wpilogxz") extension = "wpilog";
+          switch (platform) {
+            case "darwin":
+              img.src = "../icons/download/" + extension + "-icon-mac.png";
+              img.classList.add("mac");
+              break;
+            case "linux":
+            case "win32":
+              img.src = "../icons/download/" + extension + "-icon-linuxwin.png";
+              break;
+            case "lite":
+              img.src = "../icons/" + extension + "-icon.png";
+              break;
+          }
         }
         let filenameSpan = document.createElement("span");
         item.appendChild(filenameSpan);
@@ -297,7 +330,7 @@ DOWNLOAD_BUTTON.addEventListener("click", save);
 window.addEventListener("keydown", (event) => {
   if (event.code === "Enter") {
     save();
-  } else if (event.key === "a" && (platform === "darwin" ? event.metaKey : event.ctrlKey)) {
+  } else if (!IS_LITE && event.key === "a" && (platform === "darwin" ? event.metaKey : event.ctrlKey)) {
     if (filenames.length === selectedFiles.length) {
       // Deselect all
       selectedFiles = [];
@@ -307,9 +340,15 @@ window.addEventListener("keydown", (event) => {
     } else {
       // Select all
       selectedFiles = [...filenames];
-      Array.from(FILE_LIST_ITEMS.children).forEach((row) => {
-        row.classList.add("selected");
+      Array.from(FILE_LIST_ITEMS.children).forEach((row, index) => {
+        if (index < filenames.length) {
+          row.classList.add("selected");
+        }
       });
     }
   }
+});
+window.addEventListener("load", () => {
+  (DOWNLOAD_BUTTON.children[0] as HTMLElement).hidden = IS_LITE;
+  (DOWNLOAD_BUTTON.children[1] as HTMLElement).hidden = !IS_LITE;
 });

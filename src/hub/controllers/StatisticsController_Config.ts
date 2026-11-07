@@ -1,16 +1,23 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { GraphColors } from "../../shared/Colors";
 import { SourceListConfig } from "../../shared/SourceListConfig";
 
 const StatisticsController_Config: SourceListConfig = {
   title: "Measurements",
   autoAdvance: "color",
-  allowChildrenFromDrag: false,
+  allowChildrenFromDrag: true,
   typeMemoryId: "statistics",
   types: [
     {
       key: "independent",
       display: "Independent",
-      symbol: "line.3.horizontal",
+      symbol: "menu",
       showInTypeName: true,
       color: "color",
       sourceTypes: ["Number"],
@@ -28,7 +35,7 @@ const StatisticsController_Config: SourceListConfig = {
     {
       key: "reference",
       display: "Reference",
-      symbol: "line.horizontal.star.fill.line.horizontal",
+      symbol: "anchor",
       showInTypeName: true,
       color: "#000000",
       darkColor: "#ffffff",
@@ -41,7 +48,7 @@ const StatisticsController_Config: SourceListConfig = {
     {
       key: "relativeError",
       display: "Relative Error",
-      symbol: "arrow.down.and.line.horizontal.and.arrow.up",
+      symbol: "verticalaligncenter",
       showInTypeName: true,
       color: "color",
       sourceTypes: ["Number"],
@@ -60,7 +67,7 @@ const StatisticsController_Config: SourceListConfig = {
     {
       key: "absoluteError",
       display: "Absolute Error",
-      symbol: "arrow.down.to.line",
+      symbol: "verticalalignbottom",
       showInTypeName: true,
       color: "color",
       sourceTypes: ["Number"],

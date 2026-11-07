@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 export type SourceListConfig = {
   title: string;
   /** True advances type, string advances option */
@@ -18,8 +25,6 @@ export type SourceListTypeConfig = {
   color: string;
   darkColor?: string;
   sourceTypes: string[];
-  /** Enable deprecation warning */
-  numberArrayDeprecated?: boolean;
   /** Identifies parents with shared children types */
   parentKey?: string;
   /** Parent key this child is attached to */
@@ -33,8 +38,8 @@ export type SourceListTypeConfig = {
     | "Translation3d"
     | "Pose3d"
     | "Transform3d"
-    | "SwerveModuleState[]"
-    | "ChassisSpeeds"
+    | "ModuleVelocities"
+    | "RobotVelocities"
     | null; // Don't use preview
   initialSelectionOption?: string;
   showDocs: boolean;

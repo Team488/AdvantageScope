@@ -1,3 +1,12 @@
+/*
+  Copyright (c) 2021-2026 Littleton Robotics
+  http://github.com/Mechanical-Advantage
+
+  Use of this source code is governed by a BSD
+  license that can be found in the LICENSE file
+  at the root directory of this project.
+*/
+
 :root {
   --side-bar-width: 300px;
   --show-side-bar: 1;
@@ -24,7 +33,7 @@ div.title-bar {
   display: none;
   z-index: 5;
   user-select: none;
-  -webkit-app-region: drag;
+  -webkit-app-region: drag; /* Window dragging support for Electron */
 }
 
 body {
@@ -32,7 +41,8 @@ body {
 }
 
 body.fancy-title-bar-mac div.title-bar,
-body.fancy-title-bar-win div.title-bar {
+body.fancy-title-bar-win div.title-bar,
+body.fancy-title-bar-lite div.title-bar {
   display: initial;
 }
 
@@ -56,6 +66,14 @@ body.fancy-title-bar-mac div.title-bar-text {
   );
 }
 
+body.fancy-title-bar-lite div.title-bar-text {
+  left: calc(var(--side-bar-width) + 20px);
+  right: calc(
+    154px - 33px + var(--show-lock-buttons) * 28px + var(--show-update-button) * 38px + var(--show-feedback-button) *
+      38px
+  );
+}
+
 body.fancy-title-bar-win div.title-bar-text {
   left: calc(var(--side-bar-width) + 20px);
   right: 140px;
@@ -67,13 +85,16 @@ div.title-bar-menu {
   width: calc(var(--side-bar-width) - 20px);
   max-width: 250px;
   top: 19px;
-  height: 28px;
+  height: 36px;
+  padding: 4px;
+  box-sizing: border-box;
   transform: translate(-50%, -50%);
 
   z-index: 6;
   display: none;
   -webkit-app-region: no-drag;
   overflow-x: auto;
+  scrollbar-width: none; /* Required for Firefox */
 }
 
 div.title-bar-menu::-webkit-scrollbar {
@@ -81,8 +102,17 @@ div.title-bar-menu::-webkit-scrollbar {
 }
 
 body.fancy-title-bar-win div.title-bar-menu,
-body.fancy-title-bar-linux div.title-bar-menu {
+body.fancy-title-bar-linux div.title-bar-menu,
+body.fancy-title-bar-lite div.title-bar-menu {
   display: initial;
+}
+
+body.fancy-title-bar-lite div.title-bar-menu {
+  max-width: 180px;
+}
+
+body.fancy-title-bar-lite div.title-bar-menu .hide-lite {
+  display: none;
 }
 
 div.title-bar-menu table {
@@ -98,10 +128,16 @@ div.title-bar-menu td {
 
 div.title-bar-menu button {
   width: 100%;
-  height: 100%;
+  height: 28px; /* Firefox doesn't support using "100%" here */
   font-size: 12px;
   padding-left: 3px;
   padding-right: 3px;
+}
+
+div.title-bar-menu button:focus-visible,
+div.title-bar-menu button:focus {
+  position: relative;
+  z-index: 10;
 }
 
 div.title-bar-menu button:hover {
@@ -165,12 +201,14 @@ div.side-bar-background {
   background-color: #e9e9e9;
 }
 
-body.fancy-side-bar-mac div.side-bar-background {
-  display: none;
-}
+@media (prefers-reduced-transparency: no-preference) {
+  body.fancy-side-bar-mac div.side-bar-background {
+    display: none;
+  }
 
-body.fancy-side-bar-win div.side-bar-background {
-  opacity: 0.5;
+  body.fancy-side-bar-win div.side-bar-background {
+    opacity: 0.5;
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -195,7 +233,8 @@ div.side-bar-shadow {
 
 body.fancy-title-bar-mac div.side-bar-shadow,
 body.fancy-title-bar-win div.side-bar-shadow,
-body.fancy-title-bar-linux div.side-bar-shadow {
+body.fancy-title-bar-linux div.side-bar-shadow,
+body.fancy-title-bar-lite div.side-bar-shadow {
   display: initial;
 }
 
@@ -213,16 +252,19 @@ div.side-bar {
   bottom: 0px;
   z-index: 4;
   overflow: auto;
+  scrollbar-width: none; /* Required for Firefox */
 }
 
 body.fancy-title-bar-mac div.side-bar,
 body.fancy-title-bar-win div.side-bar,
-body.fancy-title-bar-linux div.side-bar {
+body.fancy-title-bar-linux div.side-bar,
+body.fancy-title-bar-lite div.side-bar {
   top: 38px;
 }
 
 body.fancy-title-bar-win div.side-bar::-webkit-scrollbar,
-body.fancy-title-bar-linux div.side-bar::-webkit-scrollbar {
+body.fancy-title-bar-linux div.side-bar::-webkit-scrollbar,
+body.fancy-title-bar-lite div.side-bar::-webkit-scrollbar {
   display: none;
 }
 
@@ -274,6 +316,11 @@ div.viewer-background {
   }
 }
 
+/** macOS Golden Gate uses a flat sidebar style, so removing the shadow blends in better with native apps. **/
+body.fancy-side-bar-mac-27 div.viewer-background {
+  box-shadow: none;
+}
+
 div.viewer {
   position: absolute;
   left: var(--side-bar-width);
@@ -285,7 +332,8 @@ div.viewer {
 }
 
 body.fancy-title-bar-mac div.viewer,
-body.fancy-title-bar-win div.viewer {
+body.fancy-title-bar-win div.viewer,
+body.fancy-title-bar-lite div.viewer {
   top: 38px;
 }
 
@@ -346,15 +394,15 @@ input.side-bar-search::-webkit-search-cancel-button {
   -webkit-appearance: none;
   height: 1em;
   width: 1em;
-  background: url("symbols/xmark.circle.fill.svg") no-repeat 50% 50%;
+  background: url("symbols/cancel.svg") no-repeat 50% 50%;
   background-size: contain;
 }
 
 img.side-bar-search-icon {
   position: absolute;
-  left: 23px;
+  left: 21px;
   top: 50%;
-  height: 13px;
+  height: 20px;
   transform: translateY(-50%);
 }
 
@@ -410,6 +458,7 @@ div.field-item {
   right: calc(var(--value-width));
   top: 0px;
   height: 100%;
+  mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) calc(100% - 10px - 20px), rgba(0, 0, 0, 0) calc(100% - 10px));
   -webkit-mask-image: linear-gradient(
     to right,
     rgba(0, 0, 0, 1) calc(100% - 10px - 20px),
@@ -430,6 +479,11 @@ div.field-value {
   white-space: nowrap;
 }
 
+div.field-value svg {
+  border-radius: 50%;
+  clip-path: circle(50% at 50% 50%);
+}
+
 div.field-value svg.tunable {
   transform: scale(175%);
 }
@@ -443,6 +497,7 @@ div.field-value input {
   background-color: #ffffff;
   border: 1px solid #888888;
   border-radius: 2px;
+  -moz-appearance: textfield;
 }
 
 div.field-value input:focus {
@@ -616,9 +671,11 @@ div.tab-bar {
 
   overflow: auto;
   white-space: nowrap;
+  scrollbar-width: none; /* Required for Firefox */
 }
 
-body.fancy-title-bar-mac div.tab-bar {
+body.fancy-title-bar-mac div.tab-bar,
+body.fancy-title-bar-lite div.tab-bar {
   right: 10px;
 }
 
@@ -648,7 +705,8 @@ div.tab-bar-shadow-right {
   background-image: linear-gradient(to left, white, rgba(255, 255, 255, 0.75), transparent);
 }
 
-body.fancy-title-bar-mac div.tab-bar-shadow-right {
+body.fancy-title-bar-mac div.tab-bar-shadow-right,
+body.fancy-title-bar-lite div.tab-bar-shadow-right {
   right: 10px;
 }
 
@@ -684,9 +742,11 @@ div.tab-bar-scroll {
   top: 0px;
   height: 50px;
   overflow: scroll;
+  scrollbar-width: none; /* Required for Firefox */
 }
 
-body.fancy-title-bar-mac div.tab-bar-scroll {
+body.fancy-title-bar-mac div.tab-bar-scroll,
+body.fancy-title-bar-lite div.tab-bar-scroll {
   right: 10px;
 }
 
@@ -716,6 +776,14 @@ div.tab {
     border 0.2s ease-in-out;
   background-color: #eee;
   border: 1px solid #aaa;
+}
+
+div.tab:focus-visible,
+div.tab:focus,
+div.setting-blocks div.split div:focus-visible,
+div.setting-blocks div.split div:focus {
+  position: relative;
+  z-index: 10;
 }
 
 div.tab:first-child {
@@ -764,7 +832,8 @@ button.tab-control {
   -webkit-app-region: no-drag;
 }
 
-body.fancy-title-bar-mac button.tab-control {
+body.fancy-title-bar-mac button.tab-control,
+body.fancy-title-bar-lite button.tab-control {
   top: 8px;
 }
 
@@ -774,6 +843,10 @@ body.fancy-title-bar-win button.tab-control {
 
 button.update {
   right: calc(154px + var(--show-lock-buttons) * 28px + var(--show-feedback-button) * 38px);
+}
+
+body.fancy-title-bar-lite button.update {
+  right: calc(154px + var(--show-lock-buttons) * 28px + var(--show-feedback-button) * 38px - 33px);
 }
 
 button.update > img {
@@ -788,6 +861,10 @@ button.update.blurred > img {
 
 button.feedback {
   right: calc(154px + var(--show-lock-buttons) * 28px);
+}
+
+body.fancy-title-bar-lite button.feedback {
+  right: calc(154px + var(--show-lock-buttons) * 28px - 33px);
 }
 
 button.feedback > img {
@@ -809,9 +886,19 @@ button.pause {
   right: calc(116px + var(--show-lock-buttons) * 28px);
 }
 
+body.fancy-title-bar-lite button.play,
+body.fancy-title-bar-lite button.pause {
+  right: calc(116px + var(--show-lock-buttons) * 28px - 33px);
+}
+
 button.lock,
 button.unlock {
   right: 116px;
+}
+
+body.fancy-title-bar-lite button.lock,
+body.fancy-title-bar-lite button.unlock {
+  right: calc(116px - 33px);
 }
 
 button.unlock > img {
@@ -850,12 +937,20 @@ button.close {
   right: 78px;
 }
 
+body.fancy-title-bar-lite button.close {
+  right: calc(78px - 33px);
+}
+
 button.popup {
   right: 45px;
 }
 
+body.fancy-title-bar-lite button.popup {
+  display: none;
+}
+
 button.close img {
-  transform: translate(-50%, -50%) scale(90%);
+  transform: translate(-50%, -50%);
 }
 
 button.add-tab {
@@ -870,7 +965,8 @@ div.timeline {
   height: calc(32px * var(--show-timeline));
   left: 10px;
   right: 10px;
-  z-index: 5;
+  z-index: 20;
+  will-change: transform;
 }
 
 canvas.timeline-canvas {
@@ -901,6 +997,7 @@ div.timeline-scroll {
   height: 100%;
   overflow: scroll;
   z-index: 9;
+  scrollbar-width: none; /* Required for Firefox */
 }
 
 div.timeline-scroll::-webkit-scrollbar {
@@ -920,6 +1017,7 @@ div.renderer-content {
   width: 100%;
   top: calc(50px + var(--show-timeline) * 42px);
   bottom: var(--tab-controls-height);
+  z-index: 1;
 }
 
 div.controls-content {
@@ -986,6 +1084,10 @@ div.source-list button.help {
 
   width: 25px;
   height: 25px;
+}
+
+div.source-list button.clear img {
+  transform: translate(-50%, -50%) scale(85%);
 }
 
 div.source-list button.help {
@@ -1092,7 +1194,7 @@ div.source-list div.key-container {
   top: 0px;
   height: 30px;
   left: calc(30px + var(--type-width));
-  max-width: calc(100% - 31px - var(--type-width) - 55px - (var(--has-warning) * 25px));
+  max-width: calc(100% - 31px - var(--type-width) - 55px);
 
   text-align: right;
   direction: rtl;
@@ -1106,7 +1208,7 @@ div.source-list div.key-container {
 
 div.source-list div.item.child div.key-container {
   left: calc(55px + var(--type-width));
-  max-width: calc(100% - 31px - 25px - var(--type-width) - 55px - (var(--has-warning) * 25px));
+  max-width: calc(100% - 31px - 25px - var(--type-width) - 55px);
 }
 
 div.source-list div.key-container span {
@@ -1123,29 +1225,6 @@ div.source-list button.hide {
   top: 15px;
   right: 40px;
   transform: translate(50%, -50%);
-}
-
-div.source-list button.warning {
-  top: 15px;
-  right: 65px;
-  transform: translate(50%, -50%);
-}
-
-div.source-list button.warning > img {
-  /* https://codepen.io/sosuke/pen/Pjoqqp */
-  filter: invert(60%) sepia(41%) saturate(3324%) hue-rotate(356deg) brightness(96%) contrast(112%);
-}
-
-div.source-list button.warning.blurred > img {
-  /* https://codepen.io/sosuke/pen/Pjoqqp */
-  filter: invert(85%) sepia(44%) saturate(1384%) hue-rotate(314deg) brightness(114%) contrast(101%);
-}
-
-@media (prefers-color-scheme: dark) {
-  div.source-list button.warning.blurred > img {
-    /* https://codepen.io/sosuke/pen/Pjoqqp */
-    filter: invert(30%) sepia(37%) saturate(3821%) hue-rotate(26deg) brightness(97%) contrast(101%);
-  }
 }
 
 div.source-list img.value-symbol {
@@ -1329,7 +1408,7 @@ div.setting-blocks div.split-2 div {
 }
 
 div.setting-blocks div.split-1 div {
-  width: 100%;
+  width: 60%;
 }
 
 div.setting-blocks div.split div img {
@@ -1339,6 +1418,28 @@ div.setting-blocks div.split div img {
   height: 60%;
   object-fit: contain;
   transform: translateY(-50%);
+}
+
+div.setting-blocks div.split div span {
+  position: relative;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1;
+  background-color: #000;
+  color: #eee;
+  opacity: 0.85;
+  transform: translateY(-50%);
+
+  transition:
+    background-color 0.2s ease-in-out,
+    color 0.2s ease-in-out;
 }
 
 div.setting-blocks div.split div:first-child {
@@ -1355,9 +1456,17 @@ div.setting-blocks div.split div:hover {
   background-color: #ddd;
 }
 
+div.setting-blocks div.split div:hover span {
+  color: #ddd;
+}
+
 div.setting-blocks div.split div.selected {
   background-color: #aaa;
   border: 1px solid #222;
+}
+
+div.setting-blocks div.split div.selected span {
+  color: #aaa;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1378,23 +1487,36 @@ div.setting-blocks div.split div.selected {
   div.setting-blocks div.split div img.invertable {
     filter: invert(100%);
   }
+
+  div.setting-blocks div.split div span {
+    background-color: #fff;
+    color: #444;
+  }
+
+  div.setting-blocks div.split div:hover span {
+    color: #555;
+  }
+
+  div.setting-blocks div.split div.selected span {
+    color: #888;
+  }
 }
 
 div.setting-blocks > div:first-child {
   margin-top: 5px;
 }
 
-div.setting-blocks div.game > div {
+div.setting-blocks div.field > div {
   position: relative;
   top: 50%;
   transform: translateY(-50%);
 }
 
-div.setting-blocks select.game-select {
+div.setting-blocks select.field-select {
   height: 24px;
 }
 
-div.setting-blocks a.game-source {
+div.setting-blocks a.field-source {
   padding: 5px;
   font-size: 14px;
 }
@@ -1405,10 +1527,14 @@ div.setting-blocks input {
   text-align: center;
 }
 
-div.setting-blocks select:not(.game-select) {
+div.setting-blocks select:not(.field-select) {
   margin: 5px;
   width: 70%;
   height: 25px;
+}
+
+div.setting-blocks input[type="number"] {
+  -moz-appearance: textfield;
 }
 
 div.setting-blocks input[type="number"]::-webkit-outer-spin-button,
@@ -1422,6 +1548,14 @@ div.setting-blocks input[type="number"]::-webkit-inner-spin-button {
     /* Lighten blue tone  */
     filter: hue-rotate(-45deg) brightness(450%);
   }
+}
+
+div.setting-blocks.frc .ftc-only {
+  display: none;
+}
+
+div.setting-blocks.ftc .frc-only {
+  display: none;
 }
 
 div.tab-centered {
@@ -1465,24 +1599,24 @@ div.line-graph-discrete {
   }
 }
 
-/* Odometry */
+/* 2D Field */
 
-div.odometry-sources {
+div.field-2d-sources {
   position: absolute;
   top: 0%;
   height: 100%;
   left: 0%;
   width: 60%;
-  min-width: calc(100% - 300px);
+  min-width: calc(100% - 250px);
 }
 
-div.odometry-settings {
+div.field-2d-settings {
   position: absolute;
   top: 0%;
   height: 100%;
   right: 0%;
   width: 40%;
-  max-width: 300px;
+  max-width: 250px;
   border-left: 1px solid #ddd;
 
   overflow-x: hidden;
@@ -1490,14 +1624,14 @@ div.odometry-settings {
 }
 
 @media (prefers-color-scheme: dark) {
-  div.odometry-settings {
+  div.field-2d-settings {
     border-left: 1px solid black;
   }
 }
 
 /* 3D Field */
 
-div.three-dimension-sources {
+div.field-3d-sources {
   position: absolute;
   top: 0%;
   height: 100%;
@@ -1506,7 +1640,7 @@ div.three-dimension-sources {
   min-width: calc(100% - 200px);
 }
 
-div.three-dimension-settings {
+div.field-3d-settings {
   position: absolute;
   top: 0%;
   height: 100%;
@@ -1520,8 +1654,35 @@ div.three-dimension-settings {
 }
 
 @media (prefers-color-scheme: dark) {
-  div.three-dimension-settings {
+  div.field-3d-settings {
     border-left: 1px solid black;
+  }
+}
+div.setting-blocks div.split div.xr-button img {
+  /* https://codepen.io/sosuke/pen/Pjoqqp */
+  filter: invert(56%) sepia(51%) saturate(1742%) hue-rotate(225deg) brightness(101%) contrast(101%);
+}
+
+div.setting-blocks div.split div.xr-button.active {
+  animation: xr-active 1s ease-in-out infinite;
+}
+
+div.setting-blocks div.split div.xr-button.active img {
+  filter: invert(100%);
+}
+
+@keyframes xr-active {
+  0% {
+    background-color: #800080;
+    border: 1px solid #500050;
+  }
+  50% {
+    background-color: #c880ff;
+    border: 1px solid #9850cf;
+  }
+  100% {
+    background-color: #800080;
+    border: 1px solid #500050;
   }
 }
 
@@ -1690,6 +1851,8 @@ input.video-timeline-slider {
   appearance: none;
   background-color: #aaa;
 }
+
+/* Video tab is not used with Lite so Firefox support not required */
 
 input.video-timeline-slider::-webkit-slider-thumb {
   appearance: none;

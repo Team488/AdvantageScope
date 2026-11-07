@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 /** Checks whether two arrays are equal. */
 export function arraysEqual(a: any[], b: any[]): boolean {
   return (
@@ -39,6 +46,12 @@ export function htmlEncode(text: string): string {
 /** Returns an array of ascending integers with the specified length. */
 export function indexArray(length: number): number[] {
   return Array.from({ length: length }, (_, i) => i);
+}
+
+/** Returns whether the character at the specified index is capitalized. */
+export function charIsCapital(input: string, index: number): boolean {
+  let char = input.charAt(index);
+  return char === char.toUpperCase();
 }
 
 /** Calculates a mock progress value. */
@@ -84,9 +97,24 @@ export function formatTimeWithMS(time: number): string {
   return seconds.toString() + "." + milliseconds.toString().padStart(3, "0");
 }
 
+/** Formats a date to YYYY-MM-DD in local time. */
+export function formatDate(date: Date = new Date()): string {
+  let year = date.getFullYear().toString();
+  let month = (date.getMonth() + 1).toString().padStart(2, "0");
+  let day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /** Converts a value between two ranges. */
 export function scaleValue(value: number, oldRange: [number, number], newRange: [number, number]): number {
   return ((value - oldRange[0]) / (oldRange[1] - oldRange[0])) * (newRange[1] - newRange[0]) + newRange[0];
+}
+
+/** Converts a value between two ranges. */
+export function scaleValueClamped(value: number, oldRange: [number, number], newRange: [number, number]): number {
+  return (
+    clampValue((value - oldRange[0]) / (oldRange[1] - oldRange[0]), 0, 1) * (newRange[1] - newRange[0]) + newRange[0]
+  );
 }
 
 /** Converts a value between two ranges, with caching for better performance. */
@@ -199,16 +227,16 @@ export function getSpiralIndex(x: number, y: number): number {
   let interiorCount = interior(current);
   let start = startPoint(current);
 
-  if (current.x == a && current.y >= start.y) {
+  if (current.x === a && current.y >= start.y) {
     offset = offsetFirstRow(start, current);
     return offset + interiorCount;
-  } else if (current.y == a) {
+  } else if (current.y === a) {
     let start2 = { x: a, y: a };
     let off1 = offsetFirstRow(start, start2);
     let off2 = start2.x - current.x;
     offset = off1 + off2;
     return offset + interiorCount;
-  } else if (current.x == -a) {
+  } else if (current.x === -a) {
     let start2 = { x: a, y: a };
     let off1 = offsetFirstRow(start, start2);
     let start3 = { x: -a, y: a };

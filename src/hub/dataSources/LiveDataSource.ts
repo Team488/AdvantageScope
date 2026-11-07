@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import Log from "../../shared/log/Log";
 import { createUUID } from "../../shared/util";
 import LiveDataTuner from "./LiveDataTuner";
@@ -24,7 +31,8 @@ export abstract class LiveDataSource {
   connect(
     address: string,
     statusCallback: (status: LiveDataSourceStatus) => void,
-    outputCallback: (log: Log, timeSupplier: () => number) => void
+    outputCallback: (log: Log, timeSupplier: () => number) => void,
+    enableClearData = true
   ) {
     this.address = address;
     this.statusCallback = statusCallback;
@@ -35,15 +43,17 @@ export abstract class LiveDataSource {
     this.setStatus(LiveDataSourceStatus.Connecting);
 
     // Clear old data
-    this.clearDataCallback = setInterval(() => {
-      if (this.log && this.timeSupplier) {
-        let liveDiscardSecs = window.preferences?.liveDiscard;
-        if (liveDiscardSecs !== undefined && liveDiscardSecs !== -1) {
-          let minTime = this.timeSupplier() - liveDiscardSecs;
-          this.log.clearBeforeTime(Math.max(0, minTime));
+    if (enableClearData) {
+      this.clearDataCallback = setInterval(() => {
+        if (this.log && this.timeSupplier) {
+          let liveDiscardSecs = window.preferences?.liveDiscard;
+          if (liveDiscardSecs !== undefined && liveDiscardSecs !== -1) {
+            let minTime = this.timeSupplier() - liveDiscardSecs;
+            this.log.clearBeforeTime(Math.max(0, minTime), false);
+          }
         }
-      }
-    }, 1000 / 60);
+      }, 1000 / 60);
+    }
   }
 
   /** Cancels the connection. */

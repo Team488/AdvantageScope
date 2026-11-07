@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { NeonColors_RedStart } from "../../shared/Colors";
 import { SourceListConfig, SourceListOptionValueConfig } from "../../shared/SourceListConfig";
 
@@ -17,12 +24,12 @@ const SwerveController_Config: SourceListConfig = {
   typeMemoryId: "swerve",
   types: [
     {
-      key: "states",
-      display: "Module States",
-      symbol: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
+      key: "moduleVelocities",
+      display: "Module Velocities",
+      symbol: "zoomoutmap",
       showInTypeName: true,
       color: "color",
-      sourceTypes: ["SwerveModuleState[]"],
+      sourceTypes: ["SwerveModuleVelocity[]", "SwerveModuleState[]"],
       showDocs: true,
       options: [
         {
@@ -39,50 +46,15 @@ const SwerveController_Config: SourceListConfig = {
         }
       ],
       initialSelectionOption: "color",
-      previewType: "SwerveModuleState[]"
+      previewType: "ModuleVelocities"
     },
     {
-      key: "statesLegacy",
-      display: "Module States",
-      symbol: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
+      key: "robotVelocities",
+      display: "Robot Velocities",
+      symbol: "speed",
       showInTypeName: true,
       color: "color",
-      sourceTypes: ["NumberArray"],
-      showDocs: false,
-      options: [
-        {
-          key: "color",
-          display: "Color",
-          showInTypeName: false,
-          values: NeonColors_RedStart
-        },
-        {
-          key: "arrangement",
-          display: "Arrangement",
-          showInTypeName: false,
-          values: SwerveArrangementValues
-        },
-        {
-          key: "units",
-          display: "Rotation Units",
-          showInTypeName: false,
-          values: [
-            { key: "radians", display: "Radians" },
-            { key: "degrees", display: "Degrees" }
-          ]
-        }
-      ],
-      initialSelectionOption: "color",
-      numberArrayDeprecated: true,
-      previewType: "SwerveModuleState[]"
-    },
-    {
-      key: "chassisSpeeds",
-      display: "Chassis Speeds",
-      symbol: "arrow.up.and.down.square.fill",
-      showInTypeName: true,
-      color: "color",
-      sourceTypes: ["ChassisSpeeds"],
+      sourceTypes: ["ChassisVelocities", "ChassisSpeeds"],
       showDocs: true,
       options: [
         {
@@ -93,12 +65,12 @@ const SwerveController_Config: SourceListConfig = {
         }
       ],
       initialSelectionOption: "color",
-      previewType: "ChassisSpeeds"
+      previewType: "RobotVelocities"
     },
     {
       key: "rotation",
       display: "Rotation",
-      symbol: "angle",
+      symbol: "360",
       showInTypeName: true,
       color: "#000000",
       darkColor: "#ffffff",
@@ -110,7 +82,7 @@ const SwerveController_Config: SourceListConfig = {
     {
       key: "rotationLegacy",
       display: "Rotation",
-      symbol: "angle",
+      symbol: "360",
       showInTypeName: true,
       color: "#000000",
       darkColor: "#ffffff",

@@ -1,3 +1,10 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { Chart, ChartDataset, LegendOptions, LinearScaleOptions, TooltipCallbacks, registerables } from "chart.js";
 import { ensureThemeContrast } from "../Colors";
 import { cleanFloat } from "../util";
@@ -192,7 +199,7 @@ export default class StatisticsRenderer implements TabRenderer {
           return "";
         }
         const item = items[0];
-        const x = item.parsed.x;
+        const x = item.parsed.x!;
         const min = x - command.stepSize / 2;
         const max = x + command.stepSize / 2;
         return cleanFloat(min).toString() + " to " + cleanFloat(max).toString();

@@ -1,36 +1,45 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 import { TabsState } from "../shared/HubState";
 import LineGraphFilter from "../shared/LineGraphFilter";
 import TabType, { getDefaultTabTitle, getTabIcon } from "../shared/TabType";
-import { getAutonomousKey, getEnabledKey } from "../shared/log/LogUtil";
+import { Distribution, DISTRIBUTION } from "../shared/buildConstants";
+import { getAutonomousKey, getEnabledKey, getUtilityKey } from "../shared/log/RobotState";
 import ConsoleRenderer from "../shared/renderers/ConsoleRenderer";
 import DocumentationRenderer from "../shared/renderers/DocumentationRenderer";
+import Field2dRenderer from "../shared/renderers/Field2dRenderer";
+import Field3dRenderer from "../shared/renderers/Field3dRenderer";
 import JoysticksRenderer from "../shared/renderers/JoysticksRenderer";
 import LineGraphRenderer from "../shared/renderers/LineGraphRenderer";
 import MechanismRenderer from "../shared/renderers/MechanismRenderer";
 import MetadataRenderer from "../shared/renderers/MetadataRenderer";
-import OdometryRenderer from "../shared/renderers/OdometryRenderer";
 import PointsRenderer from "../shared/renderers/PointsRenderer";
 import StatisticsRenderer from "../shared/renderers/StatisticsRenderer";
 import SwerveRenderer from "../shared/renderers/SwerveRenderer";
 import TabRenderer, { NoopRenderer } from "../shared/renderers/TabRenderer";
 import TableRenderer from "../shared/renderers/TableRenderer";
-import ThreeDimensionRenderer from "../shared/renderers/ThreeDimensionRenderer";
 import VideoRenderer from "../shared/renderers/VideoRenderer";
-import { UnitConversionPreset } from "../shared/units";
-import ScrollSensor from "./ScrollSensor";
+import { Units } from "../shared/units";
+import { clampValue } from "../shared/util";
+import ScrollSensor, { ScrollSensorMouseControl } from "./ScrollSensor";
 import Timeline from "./Timeline";
 import ConsoleController from "./controllers/ConsoleController";
+import Field2dController from "./controllers/Field2dController";
+import Field3dController from "./controllers/Field3dController";
 import JoysticksController from "./controllers/JoysticksController";
 import LineGraphController from "./controllers/LineGraphController";
 import MechanismController from "./controllers/MechanismController";
 import MetadataController from "./controllers/MetadataController";
-import OdometryController from "./controllers/OdometryController";
 import PointsController from "./controllers/PointsController";
 import StatisticsController from "./controllers/StatisticsController";
 import SwerveController from "./controllers/SwerveController";
 import TabController, { NoopController } from "./controllers/TabController";
 import TableController from "./controllers/TableController";
-import ThreeDimensionController from "./controllers/ThreeDimensionController";
 import VideoController from "./controllers/VideoController";
 
 export default class Tabs {
@@ -70,6 +79,7 @@ export default class Tabs {
   }[] = [];
   private selectedTab = 0;
   private activeSatellites: string[] = [];
+  private activeXRUUID: string | null = null;
   private controlsHandleActive = false;
 
   constructor() {
@@ -79,8 +89,8 @@ export default class Tabs {
     this.FIXED_CONTROL_HEIGHTS.set(TabType.Table, 0);
     this.FIXED_CONTROL_HEIGHTS.set(TabType.Console, 0);
     this.FIXED_CONTROL_HEIGHTS.set(TabType.Statistics, undefined);
-    this.FIXED_CONTROL_HEIGHTS.set(TabType.Odometry, undefined);
-    this.FIXED_CONTROL_HEIGHTS.set(TabType.ThreeDimension, undefined);
+    this.FIXED_CONTROL_HEIGHTS.set(TabType.Field2d, undefined);
+    this.FIXED_CONTROL_HEIGHTS.set(TabType.Field3d, undefined);
     this.FIXED_CONTROL_HEIGHTS.set(TabType.Video, 85);
     this.FIXED_CONTROL_HEIGHTS.set(TabType.Joysticks, 85);
     this.FIXED_CONTROL_HEIGHTS.set(TabType.Swerve, undefined);
@@ -148,7 +158,7 @@ export default class Tabs {
             tabIndex = index;
           }
         });
-        if (tabIndex === 0) return;
+        if (tabIndex === 0 && DISTRIBUTION !== Distribution.LiteDS) return;
 
         // Trigger drag event
         while (this.DRAG_ITEM.firstChild) {
@@ -176,7 +186,7 @@ export default class Tabs {
     this.SCROLL_OVERLAY.addEventListener("contextmenu", (event) => {
       mouseDownInfo = null;
       this.tabList.forEach((tab, index) => {
-        if (index === 0) return;
+        if (index === 0 && DISTRIBUTION !== Distribution.LiteDS) return;
         let rect = tab.titleElement.getBoundingClientRect();
         if (
           event.clientX >= rect.left &&
@@ -186,7 +196,16 @@ export default class Tabs {
         ) {
           window.sendMainMessage("ask-rename-tab", {
             index: index,
-            name: this.tabList[index].title
+            name:
+              this.tabList[index].title === ""
+                ? getDefaultTabTitle(this.tabList[index].type)
+                : this.tabList[index].title,
+            rect: {
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height
+            }
           });
         }
       });
@@ -202,21 +221,8 @@ export default class Tabs {
       document.body.style.cursor = "initial";
     });
     window.addEventListener("mousemove", (event) => {
-      let fixedHeight = this.FIXED_CONTROL_HEIGHTS.get(this.tabList[this.selectedTab].type);
       if (this.controlsHandleActive) {
-        let height = window.innerHeight - event.clientY;
-        if (height >= 30 && height < 100) height = 100;
-        if (height < 30) {
-          if (this.tabList[this.selectedTab].controlsHeight > 0) {
-            height = 0;
-          } else {
-            height = this.tabList[this.selectedTab].controlsHeight;
-          }
-        }
-        if (fixedHeight !== undefined && height !== 0) {
-          height = fixedHeight;
-        }
-        this.tabList[this.selectedTab].controlsHeight = height;
+        this.tabList[this.selectedTab].controlsHeight = window.innerHeight - event.clientY;
         this.updateControlsHeight();
       }
     });
@@ -236,7 +242,13 @@ export default class Tabs {
     this.CLOSE_BUTTON.addEventListener("click", () => this.close(this.selectedTab));
     this.POPUP_BUTTON.addEventListener("click", () => this.newSatellite());
     this.ADD_BUTTON.addEventListener("click", () => {
-      window.sendMainMessage("ask-new-tab");
+      const rect = this.ADD_BUTTON.getBoundingClientRect();
+      window.sendMainMessage("ask-new-tab", {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height
+      });
     });
 
     // Drag handling
@@ -256,6 +268,10 @@ export default class Tabs {
 
       let closestDist = Infinity;
       let closestIndex = 0;
+      if (DISTRIBUTION === Distribution.LiteDS && this.tabList.length > 0) {
+        closestDist = Math.abs(x - this.tabList[0].titleElement.getBoundingClientRect().left);
+        closestIndex = -1;
+      }
       this.tabList.forEach((tab, index) => {
         let dist = Math.abs(x - tab.titleElement.getBoundingClientRect().right);
         if (dist < closestDist) {
@@ -273,20 +289,35 @@ export default class Tabs {
         }
       } else {
         this.DRAG_HIGHLIGHT.hidden = false;
-        let highlightX =
-          this.tabList[closestIndex].titleElement.getBoundingClientRect().right -
-          this.SCROLL_OVERLAY.getBoundingClientRect().left +
-          10;
+        let highlightX = 0;
+        if (closestIndex === -1) {
+          highlightX =
+            this.tabList[0].titleElement.getBoundingClientRect().left -
+            this.SCROLL_OVERLAY.getBoundingClientRect().left +
+            10;
+        } else {
+          highlightX =
+            this.tabList[closestIndex].titleElement.getBoundingClientRect().right -
+            this.SCROLL_OVERLAY.getBoundingClientRect().left +
+            10;
+        }
         this.DRAG_HIGHLIGHT.style.left = highlightX.toString() + "px";
       }
     });
 
     // Add default tabs
-    this.addTab(TabType.Documentation);
-    this.addTab(TabType.LineGraph);
-    this.addTab(TabType.Odometry);
-    this.addTab(TabType.ThreeDimension);
-    this.setSelected(1);
+    if (DISTRIBUTION === Distribution.LiteDS) {
+      this.addTab(TabType.LineGraph);
+      this.addTab(TabType.Console);
+      this.addTab(TabType.Joysticks);
+      this.setSelected(0);
+    } else {
+      this.addTab(TabType.Documentation);
+      this.addTab(TabType.LineGraph);
+      this.addTab(TabType.Field2d);
+      this.addTab(TabType.Field3d);
+      this.setSelected(1);
+    }
 
     // Scroll management
     this.tabsScrollSensor = new ScrollSensor(
@@ -294,7 +325,7 @@ export default class Tabs {
       (dx: number, dy: number) => {
         this.TAB_BAR.scrollLeft += dx + dy;
       },
-      false
+      ScrollSensorMouseControl.None
     );
 
     // Add timeline
@@ -317,7 +348,8 @@ export default class Tabs {
       this.tabList.forEach((tab, index) => {
         let activeLocal = index === this.selectedTab;
         let activeSatellite = this.activeSatellites.includes(tab.controller.UUID);
-        if (activeLocal || activeSatellite) {
+        let activeXR = tab.controller.UUID === this.activeXRUUID;
+        if (activeLocal || activeSatellite || activeXR) {
           if (tab.type === TabType.Table) {
             // Update range from renderer
             let renderer = tab.renderer as TableRenderer;
@@ -329,12 +361,20 @@ export default class Tabs {
             tab.renderer.render(command);
           }
           if (activeSatellite) {
-            let title = tab.type === TabType.Documentation ? "Documentation" : tab.title;
+            let title =
+              tab.type === TabType.Documentation
+                ? "Documentation"
+                : tab.title === ""
+                ? getDefaultTabTitle(tab.type)
+                : tab.title;
             window.sendMainMessage("update-satellite", {
               uuid: tab.controller.UUID,
               command: command,
               title: title
             });
+          }
+          if (activeXR) {
+            window.sendMainMessage("update-xr-command", command);
           }
         }
       });
@@ -349,11 +389,18 @@ export default class Tabs {
     availableHeight -= 150;
     if (this.selectedTab < 0 || this.selectedTab >= this.tabList.length) return;
     let selectedTab = this.tabList[this.selectedTab];
-    let tabConfig = this.FIXED_CONTROL_HEIGHTS.get(selectedTab.type);
-    selectedTab.controlsHeight = Math.min(selectedTab.controlsHeight, availableHeight);
 
-    let appliedHeight = Math.max(selectedTab.controlsHeight, 0);
-    this.CONTROLS_HANDLE.hidden = tabConfig === 0;
+    let fixedHeight = this.FIXED_CONTROL_HEIGHTS.get(selectedTab.type);
+    let appliedHeight = clampValue(selectedTab.controlsHeight, 0, availableHeight);
+    if (fixedHeight !== undefined) {
+      appliedHeight = appliedHeight > 30 ? fixedHeight : 0;
+    } else {
+      if (appliedHeight >= 30 && appliedHeight < 100) appliedHeight = 100;
+      if (appliedHeight > availableHeight) appliedHeight = 0;
+      if (appliedHeight < 30) appliedHeight = 0;
+    }
+    selectedTab.controlsHeight = appliedHeight;
+    this.CONTROLS_HANDLE.hidden = fixedHeight === 0;
     this.CONTROLS_CONTENT.hidden = appliedHeight === 0;
     document.documentElement.style.setProperty("--tab-controls-height", appliedHeight.toString() + "px");
     document.documentElement.style.setProperty("--show-tab-controls", appliedHeight === 0 ? "0" : "1");
@@ -431,6 +478,10 @@ export default class Tabs {
     if (autonomousKey !== undefined) {
       activeFields.add(autonomousKey);
     }
+    let utilityKey = getUtilityKey(window.log);
+    if (utilityKey !== undefined) {
+      activeFields.add(utilityKey);
+    }
     return activeFields;
   }
 
@@ -473,13 +524,13 @@ export default class Tabs {
         controller = new LineGraphController(controlsElement);
         renderer = new LineGraphRenderer(rendererElement, true);
         break;
-      case TabType.Odometry:
-        controller = new OdometryController(controlsElement);
-        renderer = new OdometryRenderer(rendererElement);
+      case TabType.Field2d:
+        controller = new Field2dController(controlsElement);
+        renderer = new Field2dRenderer(rendererElement);
         break;
-      case TabType.ThreeDimension:
-        controller = new ThreeDimensionController(controlsElement);
-        renderer = new ThreeDimensionRenderer(rendererElement);
+      case TabType.Field3d:
+        controller = new Field3dController(controlsElement);
+        renderer = new Field3dRenderer(rendererElement);
         break;
       case TabType.Table:
         controller = new TableController(rendererElement);
@@ -527,6 +578,16 @@ export default class Tabs {
     let titleElement = document.createElement("div");
     titleElement.classList.add("tab");
     titleElement.innerText = getTabIcon(type) + " " + getDefaultTabTitle(type);
+    titleElement.tabIndex = 0;
+    titleElement.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        let index = this.tabList.findIndex((t) => t.titleElement === titleElement);
+        if (index !== -1) {
+          this.setSelected(index);
+        }
+      }
+    });
 
     // Save to tab list
     if (this.tabList.length === 0) {
@@ -535,7 +596,7 @@ export default class Tabs {
     let controlsHeightConfig = this.FIXED_CONTROL_HEIGHTS.get(type);
     this.tabList.splice(this.selectedTab + 1, 0, {
       type: type,
-      title: getDefaultTabTitle(type),
+      title: "",
       titleElement: titleElement,
       controlsElement: controlsElement,
       rendererElement: rendererElement,
@@ -560,19 +621,31 @@ export default class Tabs {
   }
 
   /** Closes the specified tab. */
-  close(index: number) {
-    if (index < 1 || index > this.tabList.length - 1) return;
-    this.RENDERER_CONTENT.removeChild(this.tabList[index].rendererElement);
-    this.CONTROLS_CONTENT.removeChild(this.tabList[index].controlsElement);
-    this.tabList.splice(index, 1);
-    if (this.selectedTab > index) this.selectedTab--;
-    if (this.selectedTab > this.tabList.length - 1) this.selectedTab = this.tabList.length - 1;
-    this.updateElements();
+  close(index: number, force = false) {
+    let minIndex = DISTRIBUTION === Distribution.LiteDS ? (this.tabList.length > 1 ? 0 : 1) : 1;
+    if (index < minIndex || index > this.tabList.length - 1) return;
+
+    // If active XR, confirm before closing
+    if (!force && this.tabList[index].controller.UUID === this.activeXRUUID) {
+      window.sendMainMessage("confirm-xr-close", this.activeXRUUID);
+    } else {
+      this.RENDERER_CONTENT.removeChild(this.tabList[index].rendererElement);
+      this.CONTROLS_CONTENT.removeChild(this.tabList[index].controlsElement);
+      this.tabList.splice(index, 1);
+      if (this.selectedTab > index) this.selectedTab--;
+      if (this.selectedTab > this.tabList.length - 1) this.selectedTab = this.tabList.length - 1;
+      this.updateElements();
+    }
   }
 
   /** Returns the index of the selected tab. */
   getSelectedTab(): number {
     return this.selectedTab;
+  }
+
+  /** Returns the type of the selected tab. */
+  getSelectedTabType(): TabType {
+    return this.tabList[this.selectedTab].type;
   }
 
   /** Changes which tab is currently selected. */
@@ -584,8 +657,9 @@ export default class Tabs {
 
   /** Moves the specified tab left or right. */
   shift(index: number, shift: number) {
-    if (index === 0) return;
-    if (index + shift < 1) shift = 1 - index;
+    let minIndex = DISTRIBUTION === Distribution.LiteDS ? 0 : 1;
+    if (index < minIndex) return;
+    if (index + shift < minIndex) shift = minIndex - index;
     if (index + shift > this.tabList.length - 1) shift = this.tabList.length - 1 - index;
     if (this.selectedTab === index) {
       this.selectedTab += shift;
@@ -605,6 +679,16 @@ export default class Tabs {
     this.activeSatellites = activeSatellites;
   }
 
+  /** Updates the UUID for the tab broadcasting to XR. */
+  setActiveXRUUID(uuid: string | null) {
+    this.activeXRUUID = uuid;
+    this.tabList.forEach((tab) => {
+      if (tab.type === TabType.Field3d) {
+        (tab.controller as Field3dController).setXRActive(tab.controller.UUID === uuid);
+      }
+    });
+  }
+
   /** Check whether the UUID is associated with a tab. */
   isValidUUID(uuid: string) {
     for (let i = 0; i < this.tabList.length; i++) {
@@ -618,15 +702,18 @@ export default class Tabs {
   /** Renames a single tab. */
   renameTab(index: number, name: string) {
     let tab = this.tabList[index];
+    if (name === getDefaultTabTitle(tab.type)) {
+      name = "";
+    }
     tab.title = name;
-    tab.titleElement.innerText = getTabIcon(tab.type) + " " + name;
+    tab.titleElement.innerText = getTabIcon(tab.type) + " " + (name === "" ? getDefaultTabTitle(tab.type) : name);
   }
 
   /** Adjusts the locked range and unit conversion for an axis on the selected line graph. */
   editAxis(
     legend: string,
     lockedRange: [number, number] | null,
-    unitConversion: UnitConversionPreset,
+    unitConversion: Units.UIUnitOptions,
     filter: LineGraphFilter
   ) {
     if (this.tabList[this.selectedTab].type === TabType.LineGraph) {
@@ -646,24 +733,31 @@ export default class Tabs {
     }
   }
 
-  /** Adds the enabled field to the discrete legend on the selected line graph. */
-  addDiscreteEnabled() {
+  /** Sets the state of the robot mode visualization  on the selected line graph. */
+  setRobotModeVisible(showRobotMode: boolean) {
     if (this.tabList[this.selectedTab].type === TabType.LineGraph) {
-      (this.tabList[this.selectedTab].controller as LineGraphController).addDiscreteEnabled();
+      (this.tabList[this.selectedTab].controller as LineGraphController).setRobotModeVisible(showRobotMode);
     }
   }
 
   /** Switches the selected camera for the selected 3D field. */
   set3DCamera(index: number) {
-    if (this.tabList[this.selectedTab].type === TabType.ThreeDimension) {
-      (this.tabList[this.selectedTab].renderer as ThreeDimensionRenderer).set3DCamera(index);
+    if (this.tabList[this.selectedTab].type === TabType.Field3d) {
+      (this.tabList[this.selectedTab].renderer as Field3dRenderer).set3DCamera(index);
+    }
+  }
+
+  /** Switches the selected camera mode for the selected 2D field. */
+  set2DCamera(index: number) {
+    if (this.tabList[this.selectedTab].type === TabType.Field2d) {
+      (this.tabList[this.selectedTab].renderer as Field2dRenderer).set2DCamera(index);
     }
   }
 
   /** Switches the orbit FOV for the selected 3D field. */
   setFov(fov: number) {
-    if (this.tabList[this.selectedTab].type === TabType.ThreeDimension) {
-      (this.tabList[this.selectedTab].renderer as ThreeDimensionRenderer).setFov(fov);
+    if (this.tabList[this.selectedTab].type === TabType.Field3d) {
+      (this.tabList[this.selectedTab].renderer as Field3dRenderer).setFov(fov);
     }
   }
 
@@ -682,7 +776,6 @@ export default class Tabs {
   isUnlockedVideoSelected(): boolean {
     if (this.tabList[this.selectedTab].type === TabType.Video) {
       return !(this.tabList[this.selectedTab].controller as VideoController).isLocked();
-      return false;
     } else {
       return false;
     }

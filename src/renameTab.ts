@@ -1,9 +1,16 @@
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+
 window.addEventListener("message", (event) => {
   const NAME_INPUT = document.getElementById("name") as HTMLInputElement;
   const EXIT_BUTTON = document.getElementById("exit") as HTMLInputElement;
   const CONFIRM_BUTTON = document.getElementById("confirm") as HTMLInputElement;
 
-  if (event.source === window && event.data === "port") {
+  if (event.data === "port") {
     let messagePort = event.ports[0];
     messagePort.onmessage = (event) => {
       // Update button focus
