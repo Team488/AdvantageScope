@@ -66,10 +66,30 @@ jobs:
         run: npm ci
         env:
           YOUTUBE_DL_SKIP_DOWNLOAD: "true"
-      - name: Point update checks and GitHub links at this fork
+      - name: Apply Team 488 branding
+        # Point update checks and GitHub links at this fork, and show the
+        # team name in the window title and About dialog. Fails if upstream
+        # changes any of the target text, so the branding can't silently drop.
         run: |
-          sed -i 's|GITHUB_REPOSITORY = "Mechanical-Advantage/AdvantageScope"|GITHUB_REPOSITORY = "${{ github.repository }}"|' src/main/github.ts
-          grep -q 'GITHUB_REPOSITORY = "${{ github.repository }}"' src/main/github.ts
+          node -e '
+            const fs = require("fs");
+            const name = process.env.PRODUCT_NAME;
+            const edits = [
+              ["src/main/github.ts", `GITHUB_REPOSITORY = "Mechanical-Advantage/AdvantageScope"`, `GITHUB_REPOSITORY = "${process.env.GITHUB_REPOSITORY}"`],
+              ["src/hub/hub.ts", `" &mdash; AdvantageScope" +`, `" &mdash; ${name}" +`],
+              ["src/main/electron/main.ts", `message: "AdvantageScope",`, `message: "${name}",`],
+              ["src/main/electron/main.ts", `? "WPILib" : "FRC 6328")`, `? "WPILib" : "FRC 6328, Team 488 build")`]
+            ];
+            for (const [file, from, to] of edits) {
+              const text = fs.readFileSync(file, "utf8");
+              if (!text.includes(from)) {
+                console.log(`::error file=${file}::Branding target not found: ${from}`);
+                process.exit(1);
+              }
+              fs.writeFileSync(file, text.replace(from, () => to));
+              console.log(`${file}: ${from} -> ${to}`);
+            }
+          '
       - name: Compile WebAssembly
         run: npm run wasm:compile
       - name: Compile bundles
